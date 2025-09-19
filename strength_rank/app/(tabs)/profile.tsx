@@ -11,8 +11,6 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { decode as atob } from 'base-64';
 
-// (Optional) quick connectivity popup while you debug networking.
-// Safe to keep; it only runs once.
 import { runSupabaseDiagnostics } from '@/lib/debug';
 
 type Lift = 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
@@ -72,7 +70,6 @@ function PRRow({ lift, kg }: { lift: Lift; kg?: number }) {
 }
 
 export default function ProfileScreen() {
-  // Run diagnostics only once (prevents double alert on Fast Refresh)
   const didDiag = useRef(false);
   useEffect(() => {
     if (!didDiag.current) {
@@ -89,12 +86,12 @@ export default function ProfileScreen() {
     avatarUri: null,
   });
 
-  // Load profile + current PRs from Supabase
+  // Load profile + current PRs
   useEffect(() => {
     let cancel = false;
     (async () => {
       try {
-        const userId = await getDevUserId(); // signs in + creates minimal profile on first run if needed
+        const userId = await getDevUserId();
         const { profile: p, prs } = await fetchProfileAndCurrentPRs(userId);
 
         const prsRecord: Record<Lift, number | undefined> = {
@@ -118,7 +115,7 @@ export default function ProfileScreen() {
           bodyweightKg: p?.bodyweight_kg ?? undefined,
           heightCm: p?.height_cm ?? undefined,
           location: p?.location ?? undefined,
-          gym: p?.gym?.name ?? undefined, // selected via gym:gyms(name, city)
+          gym: p?.gym?.name ?? undefined,
           joinedISO: p?.joined_at ?? undefined,
           prs: prsRecord,
           avatarUri: p?.avatar_url ?? null,
@@ -145,7 +142,6 @@ export default function ProfileScreen() {
 
   const avatarSrc = profile.avatarUri ? { uri: profile.avatarUri } : require('@/assets/images/icon.png');
 
-  // base64 -> Uint8Array (Supabase Storage accepts Uint8Array/ArrayBuffer)
   const base64ToBytes = (b64: string) => {
     const bin = atob(b64);
     const len = bin.length;
@@ -154,7 +150,6 @@ export default function ProfileScreen() {
     return bytes;
   };
 
-  // Avatar picker + upload
   const onChangeAvatar = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -180,10 +175,10 @@ export default function ProfileScreen() {
 
       // Upload to Supabase
       try {
-        await devSignIn(); // make sure RLS allows writes as @you
+        await devSignIn();
         const userId = await getDevUserId();
 
-        const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: FileSystem.EncodingType.Base64 });
+        const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: 'base64' as any });
         const bytes = base64ToBytes(base64);
 
         const ext =
@@ -197,7 +192,7 @@ export default function ProfileScreen() {
         });
         if (upErr) throw upErr;
 
-        const { data: pub } = supabase.storage.from('avatars').getPublicUrl(up.path);
+        const { data: pub } = await supabase.storage.from('avatars').getPublicUrl(up.path);
         const publicUrl = pub.publicUrl;
 
         const { error: updErr } = await supabase
@@ -213,8 +208,9 @@ export default function ProfileScreen() {
       }
     } catch (e: any) {
       console.warn('Picker error:', e?.message || e);
+      // ⬇️ IMPORTANT: no back-ticks in this string to avoid breaking the JS parser
       alert(
-        "Image Picker isn't available in this build. If you're using Expo Go, run `npx expo install expo-image-picker` and restart with `npx expo start -c`."
+        "Image Picker isn't available in this build. If you're using Expo Go, run npx expo install expo-image-picker and then restart with npx expo start -c."
       );
     }
   };
@@ -259,7 +255,6 @@ export default function ProfileScreen() {
           </View>
         ) : (
           <>
-            {/* Public Info */}
             <View style={styles.card}>
               <ThemedText type="defaultSemiBold">Public Info</ThemedText>
               <FieldRow label="Email" value={profile.email} icon="email" />
@@ -284,7 +279,6 @@ export default function ProfileScreen() {
               />
             </View>
 
-            {/* PRs */}
             <View style={styles.card}>
               <ThemedText type="defaultSemiBold">PR Lifts</ThemedText>
               {LIFTS.map((l) => (

@@ -20,7 +20,12 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.strength_rank"
+      "package": "com.anonymous.strength_rank",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAuTIYoLpNAqkDzB4ViReVbcEXzT-4_eEg"
+        }
+      }
     },
     "web": {
       "output": "static",
@@ -46,8 +51,7 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     }
   }
 }

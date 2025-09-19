@@ -1,356 +1,340 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Image } from 'expo-image';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
+  Dimensions,
+  FlatList,
+  Keyboard,
   Platform,
+  Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
-  FlatList,
-  Pressable,
 } from 'react-native';
-
+import MapView, { Callout, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { useRouter } from 'expo-router';
+import { Image } from 'expo-image';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { supabase } from '@/lib/supabase';
 
-import { fetchHomeFeedFor, getDevUserId } from '@/lib/data';
+type Gym = { id: string; name: string; city?: string | null; lat: number; lng: number };
 
-/** ---------------- Types ---------------- */
-type FeedItem = {
-  id: string;
-  user: { handle: string; name: string; avatar?: any };
-  lift: 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
-  weightKg: number;
-  date: string;
-  videoThumb?: any;
-  stats: {
-    surpassedPercent: number;
-    progressionKgLast90d: number;
-    bodyweightKg?: number;
-  };
-  verified: boolean;
-};
-
-/** ------------- MOCK fallback (used only if Supabase fetch fails) ------------- */
-const MOCK: FeedItem[] = [
-  {
-    id: '1',
-    user: { handle: '@mislav', name: 'Mislav', avatar: require('@/assets/images/icon.png') },
-    lift: 'Deadlift',
-    weightKg: 220,
-    date: '2025-09-01',
-    videoThumb: require('@/assets/images/partial-react-logo.png'),
-    stats: { surpassedPercent: 86, progressionKgLast90d: 15, bodyweightKg: 84 },
-    verified: true,
-  },
-  {
-    id: '2',
-    user: { handle: '@iva', name: 'Iva', avatar: require('@/assets/images/icon.png') },
-    lift: 'Bench',
-    weightKg: 72.5,
-    date: '2025-09-03',
-    videoThumb: require('@/assets/images/partial-react-logo.png'),
-    stats: { surpassedPercent: 68, progressionKgLast90d: 7.5, bodyweightKg: 60 },
-    verified: false,
-  },
+const STREAKS = [
+  { handle: '@toni', name: 'Toni', days: 23 },
+  { handle: '@iva', name: 'Iva', days: 19 },
+  { handle: '@you', name: 'You', days: 17 },
+  { handle: '@mislav', name: 'Mislav', days: 15 },
+  { handle: '@eva', name: 'Eva', days: 12 },
 ];
 
-/** ---------------- Component ---------------- */
+const youIndex = STREAKS.findIndex((s) => s.handle === '@you');
+const streakScrollRef = React.createRef<ScrollView>();
+
 export default function HomeScreen() {
-  const [query, setQuery] = useState('');
-  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const router = useRouter();
+  const mapRef = useRef<MapView | null>(null);
+
+  const [gyms, setGyms] = useState<Gym[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [query, setQuery] = useState('');
+  const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
+
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
     (async () => {
       try {
-        const userId = await getDevUserId();
-        const rows: any[] = await fetchHomeFeedFor(userId, 30);
-        if (cancelled) return;
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('gyms')
+          .select('id, name, city, lat, lng')
+          .not('lat', 'is', null)
+          .not('lng', 'is', null)
+          .order('name', { ascending: true })
+          .limit(2000);
 
-        // Map Supabase rows -> FeedItem
-        const mapped: FeedItem[] = (rows || []).map((r) => ({
-          id: r.id,
-          user: {
-            handle: r.profiles?.handle ?? '@unknown',
-            name: r.profiles?.full_name ?? 'Unknown',
-            avatar: r.profiles?.avatar_url
-              ? { uri: r.profiles.avatar_url }
-              : require('@/assets/images/icon.png'),
-          },
-          lift: r.lift,
-          weightKg: Number(r.weight_kg),
-          date: r.performed_at,
-          videoThumb: require('@/assets/images/partial-react-logo.png'), // swap to real thumbnail or <Video> later
-          stats: {
-            surpassedPercent: 0, // placeholder until you have a real percentile
-            progressionKgLast90d: 0, // placeholder
-            bodyweightKg: r.bodyweight_kg != null ? Number(r.bodyweight_kg) : undefined,
-          },
-          verified: r.verify !== 'unverified',
-        }));
+        if (error) throw error;
 
-        setFeed(mapped);
-      } catch (e) {
-        // Fallback to mock if Supabase isn’t ready yet
-        setFeed(MOCK);
+        const rows =
+          (data || [])
+            .filter((g: any) => g.lat != null && g.lng != null)
+            .map((g: any) => ({
+              id: g.id,
+              name: g.name,
+              city: g.city,
+              lat: Number(g.lat),
+              lng: Number(g.lng),
+            })) as Gym[];
+
+        if (!cancel) setGyms(rows);
+      } catch {
+        if (!cancel) setGyms([]);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancel) setLoading(false);
       }
     })();
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, []);
 
-  // Build search suggestions from current feed
-  const filtered = useMemo(() => {
-    if (!query.trim()) return [];
-    const q = query.toLowerCase();
-    const unique = new Map<string, { handle: string; name: string }>();
-    for (const m of feed) unique.set(m.user.handle, { handle: m.user.handle, name: m.user.name });
-    return [...unique.values()].filter(
-      (u) => u.name.toLowerCase().includes(q) || u.handle.toLowerCase().includes(q)
+  const filteredGyms = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return gyms;
+    return gyms.filter(
+      (g) =>
+        g.name.toLowerCase().includes(q) ||
+        (g.city || '').toLowerCase().includes(q)
     );
-  }, [query, feed]);
+  }, [gyms, query]);
+
+  const selectedGym = useMemo(
+    () => gyms.find((g) => g.id === selectedGymId) || null,
+    [gyms, selectedGymId]
+  );
+
+  const centerOnGym = (g: Gym) => {
+    Keyboard.dismiss();
+    setSelectedGymId(g.id);
+    mapRef.current?.animateToRegion(
+      {
+        latitude: g.lat,
+        longitude: g.lng,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      },
+      450
+    );
+  };
+
+  const openLeaderboard = (g: Gym) => {
+    router.push({
+      pathname: '/(tabs)/leaderboard',
+      params: { gymId: g.id, gymName: g.name },
+    });
+  };
 
   return (
     <ThemedView style={styles.screen}>
-      {/* Header */}
-      <ThemedView style={styles.header}>
-        <ThemedText type="title">Strength Rank</ThemedText>
-      </ThemedView>
-
-      {/* Search */}
-      <View style={styles.searchRow}>
-        <IonIcon name="search" size={18} />
-        <TextInput
-          placeholder="Search..."
-          value={query}
-          onChangeText={setQuery}
-          style={styles.searchInput}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
+      {/* Brand header */}
+      <View style={styles.header}>
+        <Image
+          source={require('@/assets/images/logo.png')}
+          style={styles.logo}
+          contentFit="contain"
         />
+        <ThemedText type="title" style={styles.headerTitle}>
+          Strength Rank
+        </ThemedText>
       </View>
 
-      {/* Search results */}
-      {query.length > 0 && (
-        <View style={styles.searchResults}>
-          {filtered.length === 0 ? (
-            <ThemedText style={{ padding: 10 }}>No matches</ThemedText>
-          ) : (
-            filtered.map((u) => (
-              <Link key={u.handle} href="/profile" asChild>
-                <Pressable style={styles.searchResultItem}>
-                  <IonIcon name="person-circle" size={22} />
-                  <ThemedText>
-                    {u.name} <ThemedText type="defaultSemiBold">{u.handle}</ThemedText>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        {/* Map */}
+        <View style={styles.mapWrap}>
+          <MapView
+            ref={mapRef}
+            provider={PROVIDER_GOOGLE}
+            style={styles.map}
+            initialRegion={{
+              latitude: 44.7,
+              longitude: 16.3,
+              latitudeDelta: 5,
+              longitudeDelta: 5,
+            }}
+          >
+            {gyms.map((g) => (
+              <Marker
+                key={g.id}
+                coordinate={{ latitude: g.lat, longitude: g.lng }}
+                title={g.name}
+                onPress={() => setSelectedGymId(g.id)}
+                pinColor="red"
+              >
+                <Callout onPress={() => centerOnGym(g)}>
+                  <ThemedText type="defaultSemiBold">{g.name}</ThemedText>
+                  <ThemedText style={{ opacity: 0.7 }}>{g.city}</ThemedText>
+                  <ThemedText style={{ marginTop: 4 }}>Tap to focus</ThemedText>
+                </Callout>
+              </Marker>
+            ))}
+          </MapView>
+        </View>
+
+        {/* Search */}
+        <View style={styles.searchRow}>
+          <ThemedText style={{ opacity: 0.7, marginRight: 6 }}>🔎</ThemedText>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search gyms (name or city)…"
+            style={styles.searchInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+        </View>
+
+        {/* Search results */}
+        {query.length > 0 && (
+          <FlatList
+            data={filteredGyms}
+            keyExtractor={(g) => g.id}
+            renderItem={({ item }) => (
+              <Pressable style={styles.row} onPress={() => centerOnGym(item)}>
+                <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
+                <ThemedText style={{ opacity: 0.6 }}>{item.city}</ThemedText>
+              </Pressable>
+            )}
+            style={styles.resultsList}
+            keyboardShouldPersistTaps="handled"
+          />
+        )}
+
+        {/* Selected gym card */}
+        {selectedGym && (
+          <View style={styles.card}>
+            <ThemedText type="defaultSemiBold">{selectedGym.name}</ThemedText>
+            <ThemedText style={{ opacity: 0.7 }}>{selectedGym.city}</ThemedText>
+            <Pressable
+              style={[styles.btn, { marginTop: 10 }]}
+              onPress={() => openLeaderboard(selectedGym)}
+            >
+              <ThemedText style={{ fontWeight: '700' }}>Open leaderboard</ThemedText>
+              <ThemedText style={{ marginLeft: 6, opacity: 0.7 }}>
+                ({selectedGym.name})
+              </ThemedText>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Streaks */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <ThemedText style={{ marginRight: 6 }}>🔥</ThemedText>
+            <ThemedText type="defaultSemiBold">Consistency streaks</ThemedText>
+          </View>
+
+          <ScrollView
+            ref={streakScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.streakRow}
+            onContentSizeChange={() => {
+              if (youIndex > -1) {
+                const cardW = 120;
+                const gap = 10;
+                const pad = 16;
+                const x =
+                  Math.max(
+                    0,
+                    youIndex * (cardW + gap) - Dimensions.get('window').width / 2 + cardW / 2
+                  ) + pad;
+                (streakScrollRef.current as any)?.scrollTo?.({ x, animated: true });
+              }
+            }}
+          >
+            {STREAKS.map((s) => {
+              const you = s.handle === '@you';
+              return (
+                <View key={s.handle} style={[styles.streakCard, you && styles.streakCardYou]}>
+                  <ThemedText type="defaultSemiBold" style={{ textAlign: 'center' }}>
+                    {s.name}
                   </ThemedText>
-                </Pressable>
-              </Link>
-            ))
-          )}
+                  <ThemedText style={{ textAlign: 'center', opacity: 0.6 }}>
+                    {s.handle}
+                  </ThemedText>
+                  <ThemedText
+                    style={{ textAlign: 'center', marginTop: 8, fontSize: 18, fontWeight: '700' }}
+                  >
+                    {s.days} days
+                  </ThemedText>
+                </View>
+              );
+            })}
+          </ScrollView>
         </View>
-      )}
 
-      {/* Feed */}
-      {loading ? (
-        <View style={{ paddingTop: 24 }}>
-          <ActivityIndicator />
-        </View>
-      ) : (
-        <FlatList
-          data={feed}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => <PostCard item={item} />}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <ThemedText style={{ textAlign: 'center', marginTop: 24 }}>
-              No posts yet.
-            </ThemedText>
-          }
-        />
-      )}
+        <View style={{ height: 28 }} />
+      </ScrollView>
     </ThemedView>
   );
 }
 
-/** SMALL inline icon helper to avoid extra deps setup */
-function IonIcon({
-  name,
-  size = 18,
-  color = '#666',
-}: {
-  name: any;
-  size?: number;
-  color?: string;
-}) {
-  const map: Record<string, string> = {
-    search: '🔍',
-    'person-circle': '👤',
-    'checkmark-circle': '✅',
-    'close-circle': '⭕',
-    play: '▶️',
-    time: '⏱️',
-    trending: '📈',
-  };
-  return <ThemedText style={{ fontSize: size, color }}>{map[name] || '•'}</ThemedText>;
-}
-
-function PostCard({ item }: { item: FeedItem }) {
-  return (
-    <ThemedView style={styles.card}>
-      {/* Header row */}
-      <View style={styles.cardHeader}>
-        <Image source={item.user.avatar} style={styles.avatar} />
-        <View style={{ flex: 1 }}>
-          <ThemedText type="defaultSemiBold">{item.user.name}</ThemedText>
-          <ThemedText style={{ opacity: 0.7 }}>{item.user.handle}</ThemedText>
-        </View>
-        <View style={styles.verifyPill}>
-          <IonIcon name={item.verified ? 'checkmark-circle' : 'close-circle'} />
-          <ThemedText style={{ marginLeft: 4 }}>
-            {item.verified ? 'Verified' : 'Unverified'}
-          </ThemedText>
-        </View>
-      </View>
-
-      {/* Media + Stats */}
-      <View style={styles.mediaRow}>
-        <View style={styles.videoWrap}>
-          <Image source={item.videoThumb} style={styles.video} contentFit="cover" />
-          <View style={styles.playOverlay}>
-            <IonIcon name="play" size={24} color="#fff" />
-          </View>
-        </View>
-
-        <View style={styles.statsBox}>
-          <ThemedText type="defaultSemiBold">
-            {item.lift} • {item.weightKg} kg
-          </ThemedText>
-          <View style={styles.statRow}>
-            <IonIcon name="trending" />
-            <ThemedText style={styles.statText}>
-              Surpassed{' '}
-              <ThemedText type="defaultSemiBold">
-                {item.stats.surpassedPercent}%
-              </ThemedText>{' '}
-              of lifters
-            </ThemedText>
-          </View>
-          <View style={styles.statRow}>
-            <IonIcon name="time" />
-            <ThemedText style={styles.statText}>
-              +{item.stats.progressionKgLast90d} kg (last 90d)
-            </ThemedText>
-          </View>
-          {item.stats.bodyweightKg ? (
-            <ThemedText style={{ opacity: 0.7 }}>
-              BW: {item.stats.bodyweightKg} kg • {new Date(item.date).toDateString()}
-            </ThemedText>
-          ) : null}
-        </View>
-      </View>
-
-      {/* Actions row (placeholder) */}
-      <View style={styles.actions}>
-        <Pressable style={styles.actionBtn}>
-          <ThemedText>Like</ThemedText>
-        </Pressable>
-        <Pressable style={styles.actionBtn}>
-          <ThemedText>Comment</ThemedText>
-        </Pressable>
-        <Pressable style={styles.actionBtn}>
-          <ThemedText>Share</ThemedText>
-        </Pressable>
-      </View>
-    </ThemedView>
-  );
-}
-
-/** ---------------- Styles ---------------- */
 const styles = StyleSheet.create({
-  screen: { flex: 1, paddingTop: Platform.select({ ios: 56, android: 50, default: 50 }) },
-  header: { paddingHorizontal: 16, paddingBottom: 8 },
+  screen: { flex: 1, paddingTop: Platform.select({ ios: 56, android: 36, default: 24 }) },
+  scroll: { paddingBottom: 24 },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    marginTop: 10
+  },
+  logo: { width: 36, height: 36, borderRadius: 8, backgroundColor: 'transparent' },
+  headerTitle: { fontSize: 22 },
+
+  mapWrap: { height: 220, marginHorizontal: 12, borderRadius: 16, overflow: 'hidden' },
+  map: { ...StyleSheet.absoluteFillObject },
+
   searchRow: {
     marginHorizontal: 16,
-    marginBottom: 8,
+    marginTop: 10,
+    marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#ccc',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    backgroundColor: '#fff',
   },
   searchInput: { flex: 1, paddingVertical: 0, fontSize: 16 },
-  searchResults: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e3e3e3',
-    overflow: 'hidden',
-  },
-  searchResultItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
-  },
-  listContent: { padding: 16, paddingBottom: 40 },
+
+  resultsList: { marginHorizontal: 12, maxHeight: 240, borderRadius: 12 },
+
   card: {
+    marginTop: 10,
+    marginHorizontal: 12,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#ddd',
+    backgroundColor: 'transparent',
     padding: 12,
-    marginBottom: 12,
-    gap: 10,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#eee' },
-  verifyPill: {
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+
+  row: {
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#eee',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ddd',
+    justifyContent: 'space-between',
   },
-  mediaRow: {
+
+  btn: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  videoWrap: { flex: 3, borderRadius: 12, overflow: 'hidden', position: 'relative' },
-  video: { width: '100%', height: 180, backgroundColor: '#fafafa' },
-  playOverlay: {
-    position: 'absolute',
-    inset: 0,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.12)',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#efefef',
+    alignSelf: 'flex-start',
   },
-  statsBox: {
-    flex: 2,
+
+  streakRow: { paddingHorizontal: 4, gap: 10 },
+  streakCard: {
+    width: 120,
     padding: 10,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#eee',
-    gap: 8,
-    justifyContent: 'center',
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
   },
-  statRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  statText: { fontSize: 14 },
-  actions: { flexDirection: 'row', gap: 12, marginTop: 2 },
-  actionBtn: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#f6f6f6' },
+  streakCardYou: { borderColor: '#bbb', backgroundColor: '#f5f5f5' },
 });

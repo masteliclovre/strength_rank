@@ -196,7 +196,8 @@ export default function AddPRScreen() {
 
   async function uploadPRVideo(uri: string, userId: string): Promise<string> {
     // Read the file as base64 (works reliably on Android/iOS)
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+
 
     // Convert base64 -> Uint8Array (Supabase accepts ArrayBuffer/Uint8Array)
     const binary = atob(base64);
