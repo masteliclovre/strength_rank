@@ -1,5 +1,5 @@
 // components/ui/collapsible.tsx
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { ThemedText } from '@/components/themed-text';
