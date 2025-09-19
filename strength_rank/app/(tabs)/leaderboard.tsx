@@ -18,15 +18,20 @@ import { ThemedView } from '@/components/themed-view';
 import { supabase } from '@/lib/supabase';
 
 // Optional helpers (dev sign-in / @you id)
-type DevHelpersModule = typeof import('@/lib/data');
+type DevHelpersModule = {
+  devSignIn?: () => Promise<unknown>;
+  getDevUserId?: () => Promise<string>;
+};
+
 let cachedDevHelpers: DevHelpersModule | null = null;
 let loadDevHelpersPromise: Promise<DevHelpersModule | null> | null = null;
 
 async function loadDevHelpers(): Promise<DevHelpersModule | null> {
   if (cachedDevHelpers) return cachedDevHelpers;
   if (!loadDevHelpersPromise) {
-    loadDevHelpersPromise = import('@/lib/data')
-      .then((mod) => {
+    loadDevHelpersPromise = Promise.resolve()
+      .then(() => {
+        const mod = require('@/lib/data') as DevHelpersModule;
         cachedDevHelpers = mod;
         return mod;
       })
