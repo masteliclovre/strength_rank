@@ -171,7 +171,7 @@ export default function AddPRScreen() {
     return () => { cancel = true; };
   }, [lift]);
 
-  function useOldPR(pr: OldPR) {
+  function selectOldPR(pr: OldPR) {
     setSelectedOld(pr);
     setWeightKg(String(pr.weightKg));
     setBodyweightKg(String(pr.bodyweightKg));
@@ -368,7 +368,7 @@ export default function AddPRScreen() {
               <ThemedText style={{ opacity: 0.7 }}>No previous PRs for {lift}</ThemedText>
             ) : (
               oldForLift.map((pr) => (
-                <Pressable key={pr.id} onPress={() => useOldPR(pr)} style={[styles.oldCard, selectedOld?.id === pr.id && styles.oldCardSel]}>
+                <Pressable key={pr.id} onPress={() => selectOldPR(pr)} style={[styles.oldCard, selectedOld?.id === pr.id && styles.oldCardSel]}>
                   <ThemedText type="defaultSemiBold">{pr.weightKg} kg</ThemedText>
                   <ThemedText style={{ opacity: 0.7 }}>{pr.date}</ThemedText>
                   <ThemedText style={{ marginTop: 4 }}>BW {pr.bodyweightKg} • Age {pr.age}</ThemedText>

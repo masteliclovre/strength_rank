@@ -35,7 +35,6 @@ export default function HomeScreen() {
   const mapRef = useRef<MapView | null>(null);
 
   const [gyms, setGyms] = useState<Gym[]>([]);
-  const [loading, setLoading] = useState(true);
 
   const [query, setQuery] = useState('');
   const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
@@ -44,7 +43,6 @@ export default function HomeScreen() {
     let cancel = false;
     (async () => {
       try {
-        setLoading(true);
         const { data, error } = await supabase
           .from('gyms')
           .select('id, name, city, lat, lng')
@@ -69,8 +67,6 @@ export default function HomeScreen() {
         if (!cancel) setGyms(rows);
       } catch {
         if (!cancel) setGyms([]);
-      } finally {
-        if (!cancel) setLoading(false);
       }
     })();
     return () => {

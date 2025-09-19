@@ -18,14 +18,22 @@ import { ThemedView } from '@/components/themed-view';
 import { supabase } from '@/lib/supabase';
 
 // Optional helpers (dev sign-in / @you id)
-let devSignIn: undefined | (() => Promise<void>);
-let getDevUserId: undefined | (() => Promise<string>);
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const dataLib = require('@/lib/data');
-  devSignIn = dataLib.devSignIn;
-  getDevUserId = dataLib.getDevUserId;
-} catch { /* optional */ }
+type DevHelpersModule = typeof import('@/lib/data');
+let cachedDevHelpers: DevHelpersModule | null = null;
+let loadDevHelpersPromise: Promise<DevHelpersModule | null> | null = null;
+
+async function loadDevHelpers(): Promise<DevHelpersModule | null> {
+  if (cachedDevHelpers) return cachedDevHelpers;
+  if (!loadDevHelpersPromise) {
+    loadDevHelpersPromise = import('@/lib/data')
+      .then((mod) => {
+        cachedDevHelpers = mod;
+        return mod;
+      })
+      .catch(() => null);
+  }
+  return loadDevHelpersPromise;
+}
 
 // Types
 type Lift = 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
@@ -475,7 +483,7 @@ export default function LeaderboardScreen() {
   const youIndex = sortedData.findIndex((a) => a.handle === YOU_HANDLE);
   const youRank = youIndex >= 0 ? youIndex + 1 : undefined;
   const youPR = sortedData.find((a) => a.handle === YOU_HANDLE)?.prs[lift];
-  const values = useMemo(() => sortedData.map((a) => a.prs[lift] || 0), [sortedData]);
+  const values = useMemo(() => sortedData.map((a) => a.prs[lift] || 0), [sortedData, lift]);
 
   const Header = (
     <View style={{ paddingHorizontal: 16 }}>
@@ -637,16 +645,19 @@ async function ensureSignedIn(): Promise<string | null> {
   const { data } = await supabase.auth.getUser();
   if (data?.user?.id) return data.user.id;
 
+  let helpers: DevHelpersModule | null = null;
   try {
-    if (devSignIn) await devSignIn();
+    helpers = await loadDevHelpers();
+    if (helpers?.devSignIn) await helpers.devSignIn();
   } catch { /* ignore */ }
 
   const again = await supabase.auth.getUser();
   if (again.data?.user?.id) return again.data.user.id;
 
   try {
-    if (getDevUserId) {
-      const id = await getDevUserId();
+    helpers = helpers ?? (await loadDevHelpers());
+    if (helpers?.getDevUserId) {
+      const id = await helpers.getDevUserId();
       if (id) return id;
     }
     const { data: you } = await supabase.from('profiles').select('id').eq('handle', YOU_HANDLE).single();
