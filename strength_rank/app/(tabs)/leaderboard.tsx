@@ -31,7 +31,7 @@ async function loadDevHelpers(): Promise<DevHelpersModule | null> {
   if (!loadDevHelpersPromise) {
     loadDevHelpersPromise = Promise.resolve()
       .then(() => {
-        const mod = require('@/lib/data') as DevHelpersModule;
+        const mod = require('../../lib/data') as DevHelpersModule;
         cachedDevHelpers = mod;
         return mod;
       })

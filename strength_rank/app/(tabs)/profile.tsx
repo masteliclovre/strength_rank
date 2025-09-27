@@ -11,8 +11,6 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { decode as atob } from 'base-64';
 
-import { runSupabaseDiagnostics } from '@/lib/debug';
-
 type Lift = 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
 const LIFTS: Lift[] = ['Squat', 'Bench', 'Deadlift', 'Overhead Press'];
 
@@ -70,14 +68,6 @@ function PRRow({ lift, kg }: { lift: Lift; kg?: number }) {
 }
 
 export default function ProfileScreen() {
-  const didDiag = useRef(false);
-  useEffect(() => {
-    if (!didDiag.current) {
-      didDiag.current = true;
-      runSupabaseDiagnostics();
-    }
-  }, []);
-
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileView>({
     name: 'Loading…',

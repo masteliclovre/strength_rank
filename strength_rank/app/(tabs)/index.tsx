@@ -1,3 +1,4 @@
+// app/(tabs)/index.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
@@ -35,10 +36,10 @@ export default function HomeScreen() {
   const mapRef = useRef<MapView | null>(null);
 
   const [gyms, setGyms] = useState<Gym[]>([]);
-
   const [query, setQuery] = useState('');
   const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
 
+  // Load gyms
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -110,8 +111,9 @@ export default function HomeScreen() {
     });
   };
 
-  return (
-    <ThemedView style={styles.screen}>
+  // Everything except the search results goes in the header of the FlatList
+  const Header = (
+    <View>
       {/* Brand header */}
       <View style={styles.header}>
         <Image
@@ -124,141 +126,138 @@ export default function HomeScreen() {
         </ThemedText>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {/* Map */}
-        <View style={styles.mapWrap}>
-          <MapView
-            ref={mapRef}
-            provider={PROVIDER_GOOGLE}
-            style={styles.map}
-            initialRegion={{
-              latitude: 44.7,
-              longitude: 16.3,
-              latitudeDelta: 5,
-              longitudeDelta: 5,
-            }}
-          >
-            {gyms.map((g) => (
-              <Marker
-                key={g.id}
-                coordinate={{ latitude: g.lat, longitude: g.lng }}
-                title={g.name}
-                onPress={() => setSelectedGymId(g.id)}
-                pinColor="red"
-              >
-                <Callout onPress={() => centerOnGym(g)}>
-                  <ThemedText type="defaultSemiBold">{g.name}</ThemedText>
-                  <ThemedText style={{ opacity: 0.7 }}>{g.city}</ThemedText>
-                  <ThemedText style={{ marginTop: 4 }}>Tap to focus</ThemedText>
-                </Callout>
-              </Marker>
-            ))}
-          </MapView>
-        </View>
-
-        {/* Search */}
-        <View style={styles.searchRow}>
-          <ThemedText style={{ opacity: 0.7, marginRight: 6 }}>🔎</ThemedText>
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search gyms (name or city)…"
-            style={styles.searchInput}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-        </View>
-
-        {/* Search results */}
-        {query.length > 0 && (
-          <FlatList
-            data={filteredGyms}
-            keyExtractor={(g) => g.id}
-            renderItem={({ item }) => (
-              <Pressable style={styles.row} onPress={() => centerOnGym(item)}>
-                <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
-                <ThemedText style={{ opacity: 0.6 }}>{item.city}</ThemedText>
-              </Pressable>
-            )}
-            style={styles.resultsList}
-            keyboardShouldPersistTaps="handled"
-          />
-        )}
-
-        {/* Selected gym card */}
-        {selectedGym && (
-          <View style={styles.card}>
-            <ThemedText type="defaultSemiBold">{selectedGym.name}</ThemedText>
-            <ThemedText style={{ opacity: 0.7 }}>{selectedGym.city}</ThemedText>
-            <Pressable
-              style={[styles.btn, { marginTop: 10 }]}
-              onPress={() => openLeaderboard(selectedGym)}
+      {/* Map */}
+      <View style={styles.mapWrap}>
+        <MapView
+          ref={mapRef}
+          provider={PROVIDER_GOOGLE}
+          style={styles.map}
+          initialRegion={{
+            latitude: 44.7,
+            longitude: 16.3,
+            latitudeDelta: 5,
+            longitudeDelta: 5,
+          }}
+        >
+          {gyms.map((g) => (
+            <Marker
+              key={g.id}
+              coordinate={{ latitude: g.lat, longitude: g.lng }}
+              title={g.name}
+              onPress={() => setSelectedGymId(g.id)}
+              pinColor="red"
             >
-              <ThemedText style={{ fontWeight: '700' }}>Open leaderboard</ThemedText>
-              <ThemedText style={{ marginLeft: 6, opacity: 0.7 }}>
-                ({selectedGym.name})
-              </ThemedText>
-            </Pressable>
-          </View>
-        )}
+              <Callout onPress={() => centerOnGym(g)}>
+                <ThemedText type="defaultSemiBold">{g.name}</ThemedText>
+                <ThemedText style={{ opacity: 0.7 }}>{g.city}</ThemedText>
+                <ThemedText style={{ marginTop: 4 }}>Tap to focus</ThemedText>
+              </Callout>
+            </Marker>
+          ))}
+        </MapView>
+      </View>
 
-        {/* Streaks */}
+      {/* Search */}
+      <View style={styles.searchRow}>
+        <ThemedText style={{ opacity: 0.7, marginRight: 6 }}>🔎</ThemedText>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search gyms (name or city)…"
+          style={styles.searchInput}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+        />
+      </View>
+
+      {/* Selected gym card */}
+      {selectedGym && (
         <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <ThemedText style={{ marginRight: 6 }}>🔥</ThemedText>
-            <ThemedText type="defaultSemiBold">Consistency streaks</ThemedText>
-          </View>
-
-          <ScrollView
-            ref={streakScrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.streakRow}
-            onContentSizeChange={() => {
-              if (youIndex > -1) {
-                const cardW = 120;
-                const gap = 10;
-                const pad = 16;
-                const x =
-                  Math.max(
-                    0,
-                    youIndex * (cardW + gap) - Dimensions.get('window').width / 2 + cardW / 2
-                  ) + pad;
-                (streakScrollRef.current as any)?.scrollTo?.({ x, animated: true });
-              }
-            }}
+          <ThemedText type="defaultSemiBold">{selectedGym.name}</ThemedText>
+          <ThemedText style={{ opacity: 0.7 }}>{selectedGym.city}</ThemedText>
+          <Pressable
+            style={[styles.btn, { marginTop: 10 }]}
+            onPress={() => openLeaderboard(selectedGym)}
           >
-            {STREAKS.map((s) => {
-              const you = s.handle === '@you';
-              return (
-                <View key={s.handle} style={[styles.streakCard, you && styles.streakCardYou]}>
-                  <ThemedText type="defaultSemiBold" style={{ textAlign: 'center' }}>
-                    {s.name}
-                  </ThemedText>
-                  <ThemedText style={{ textAlign: 'center', opacity: 0.6 }}>
-                    {s.handle}
-                  </ThemedText>
-                  <ThemedText
-                    style={{ textAlign: 'center', marginTop: 8, fontSize: 18, fontWeight: '700' }}
-                  >
-                    {s.days} days
-                  </ThemedText>
-                </View>
-              );
-            })}
-          </ScrollView>
+            <ThemedText style={{ fontWeight: '700' }}>Open leaderboard</ThemedText>
+            <ThemedText style={{ marginLeft: 6, opacity: 0.7 }}>
+              ({selectedGym.name})
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Streaks (horizontal scroll is fine) */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <ThemedText style={{ marginRight: 6 }}>🔥</ThemedText>
+          <ThemedText type="defaultSemiBold">Consistency streaks</ThemedText>
         </View>
 
-        <View style={{ height: 28 }} />
-      </ScrollView>
+        <ScrollView
+          ref={streakScrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.streakRow}
+          onContentSizeChange={() => {
+            if (youIndex > -1) {
+              const cardW = 120;
+              const gap = 10;
+              const pad = 16;
+              const x =
+                Math.max(
+                  0,
+                  youIndex * (cardW + gap) - Dimensions.get('window').width / 2 + cardW / 2
+                ) + pad;
+              (streakScrollRef.current as any)?.scrollTo?.({ x, animated: true });
+            }
+          }}
+        >
+          {STREAKS.map((s) => {
+            const you = s.handle === '@you';
+            return (
+              <View key={s.handle} style={[styles.streakCard, you && styles.streakCardYou]}>
+                <ThemedText type="defaultSemiBold" style={{ textAlign: 'center' }}>
+                  {s.name}
+                </ThemedText>
+                <ThemedText style={{ textAlign: 'center', opacity: 0.6 }}>
+                  {s.handle}
+                </ThemedText>
+                <ThemedText
+                  style={{ textAlign: 'center', marginTop: 8, fontSize: 18, fontWeight: '700' }}
+                >
+                  {s.days} days
+                </ThemedText>
+              </View>
+            );
+          })}
+        </ScrollView>
+      </View>
+    </View>
+  );
+
+  return (
+    <ThemedView style={styles.screen}>
+      <FlatList
+        data={query.length > 0 ? filteredGyms : []} // search results list
+        keyExtractor={(g) => g.id}
+        renderItem={({ item }) => (
+          <Pressable style={styles.row} onPress={() => centerOnGym(item)}>
+            <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
+            <ThemedText style={{ opacity: 0.6 }}>{item.city}</ThemedText>
+          </Pressable>
+        )}
+        ListHeaderComponent={Header}
+        contentContainerStyle={{ paddingBottom: 24 }}
+        keyboardShouldPersistTaps="handled"
+      />
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, paddingTop: Platform.select({ ios: 56, android: 36, default: 24 }) },
-  scroll: { paddingBottom: 24 },
 
   header: {
     flexDirection: 'row',
@@ -266,7 +265,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 16,
     marginBottom: 8,
-    marginTop: 10
+    marginTop: 10,
   },
   logo: { width: 36, height: 36, borderRadius: 8, backgroundColor: 'transparent' },
   headerTitle: { fontSize: 22 },
@@ -290,8 +289,6 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, paddingVertical: 0, fontSize: 16 },
 
-  resultsList: { marginHorizontal: 12, maxHeight: 240, borderRadius: 12 },
-
   card: {
     marginTop: 10,
     marginHorizontal: 12,
@@ -311,6 +308,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginHorizontal: 12,
   },
 
   btn: {
