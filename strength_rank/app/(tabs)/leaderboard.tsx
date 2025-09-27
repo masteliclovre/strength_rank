@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,34 +11,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { supabase } from '@/lib/supabase';
-
-// Optional helpers (dev sign-in / @you id)
-type DevHelpersModule = {
-  devSignIn?: () => Promise<unknown>;
-  getDevUserId?: () => Promise<string>;
-};
-
-let cachedDevHelpers: DevHelpersModule | null = null;
-let loadDevHelpersPromise: Promise<DevHelpersModule | null> | null = null;
-
-async function loadDevHelpers(): Promise<DevHelpersModule | null> {
-  if (cachedDevHelpers) return cachedDevHelpers;
-  if (!loadDevHelpersPromise) {
-    loadDevHelpersPromise = Promise.resolve()
-      .then(() => {
-        const mod = require('../../lib/data') as DevHelpersModule;
-        cachedDevHelpers = mod;
-        return mod;
-      })
-      .catch(() => null);
-  }
-  return loadDevHelpersPromise;
-}
+import { ensureSignedIn, resolveCurrentUserId } from '@/lib/auth';
 
 // Types
 type Lift = 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
@@ -427,24 +406,28 @@ export default function LeaderboardScreen() {
   }, [gymId, refreshTick]);
 
   // Followees (for friends filter)
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      try {
-        const meId = await resolveYouId();
-        if (!meId) return;
-        const { data: follows } = await supabase
-          .from('follows')
-          .select('followee_id')
-          .eq('follower_id', meId);
-        if (cancel) return;
-        setFolloweeIds(new Set((follows || []).map((f) => f.followee_id)));
-      } catch {
-        setFolloweeIds(new Set());
-      }
-    })();
-    return () => { cancel = true; };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      let cancel = false;
+      (async () => {
+        try {
+          const meId = await resolveCurrentUserId();
+          if (!meId) return;
+          const { data: follows } = await supabase
+            .from('follows')
+            .select('followee_id')
+            .eq('follower_id', meId);
+          if (cancel) return;
+          setFolloweeIds(new Set((follows || []).map((f) => f.followee_id)));
+        } catch {
+          setFolloweeIds(new Set());
+        }
+      })();
+      return () => {
+        cancel = true;
+      };
+    }, [])
+  );
 
   const rowsWithFriends = useMemo(
     () => rows.map((a) => ({ ...a, friendsWithYou: followeeIds.has(a.userId) })),
@@ -626,9 +609,19 @@ function Row({
   lift: Lift;
   you?: boolean;
 }) {
+  const router = useRouter();
+  const openProfile = () => {
+    const handleParam = athlete.handle.replace(/^@/, '');
+    if (!handleParam) return;
+    router.push({ pathname: '/user/[handle]', params: { handle: handleParam } });
+  };
+
   const pr = athlete.prs[lift];
   return (
-    <View style={[styles.row, you && styles.rowYou]}>
+    <Pressable
+      onPress={openProfile}
+      style={({ pressed }) => [styles.row, you && styles.rowYou, pressed && styles.rowPressed]}
+    >
       <ThemedText type="defaultSemiBold" style={{ width: 36, textAlign: 'center' }}>
         #{rank}
       </ThemedText>
@@ -641,46 +634,8 @@ function Row({
         </ThemedText>
       </View>
       <ThemedText type="defaultSemiBold">{pr} kg</ThemedText>
-    </View>
+    </Pressable>
   );
-}
-
-// Helpers
-async function ensureSignedIn(): Promise<string | null> {
-  const { data } = await supabase.auth.getUser();
-  if (data?.user?.id) return data.user.id;
-
-  let helpers: DevHelpersModule | null = null;
-  try {
-    helpers = await loadDevHelpers();
-    if (helpers?.devSignIn) await helpers.devSignIn();
-  } catch { /* ignore */ }
-
-  const again = await supabase.auth.getUser();
-  if (again.data?.user?.id) return again.data.user.id;
-
-  try {
-    helpers = helpers ?? (await loadDevHelpers());
-    if (helpers?.getDevUserId) {
-      const id = await helpers.getDevUserId();
-      if (id) return id;
-    }
-    const { data: you } = await supabase.from('profiles').select('id').eq('handle', YOU_HANDLE).single();
-    if (you?.id) return you.id;
-  } catch { /* ignore */ }
-
-  return null;
-}
-
-async function resolveYouId(): Promise<string | null> {
-  const { data } = await supabase.auth.getUser();
-  if (data?.user?.id) return data.user.id;
-  try {
-    const { data: you } = await supabase.from('profiles').select('id').eq('handle', YOU_HANDLE).single();
-    return you?.id ?? null;
-  } catch {
-    return null;
-  }
 }
 
 // Styles
@@ -752,6 +707,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#eee',
   },
+  rowPressed: { opacity: 0.75 },
   rowYou: { backgroundColor: '#f7f7f7' },
   avatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#eee' },
 

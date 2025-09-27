@@ -124,6 +124,12 @@ export default function HomeScreen() {
     });
   };
 
+  const openProfileFromHandle = (handle: string) => {
+    const sanitized = handle.replace(/^@/, '');
+    if (!sanitized) return;
+    router.push({ pathname: '/user/[handle]', params: { handle: sanitized } });
+  };
+
   // Everything except the search results goes in the header of the FlatList
   const Header = (
     <View>
@@ -230,7 +236,15 @@ export default function HomeScreen() {
           {STREAKS.map((s) => {
             const you = s.handle === '@you';
             return (
-              <View key={s.handle} style={[styles.streakCard, you && styles.streakCardYou]}>
+              <Pressable
+                key={s.handle}
+                onPress={() => openProfileFromHandle(s.handle)}
+                style={({ pressed }) => [
+                  styles.streakCard,
+                  you && styles.streakCardYou,
+                  pressed && styles.streakCardPressed,
+                ]}
+              >
                 <ThemedText type="defaultSemiBold" style={{ textAlign: 'center' }}>
                   {s.name}
                 </ThemedText>
@@ -242,7 +256,7 @@ export default function HomeScreen() {
                 >
                   {s.days} days
                 </ThemedText>
-              </View>
+              </Pressable>
             );
           })}
         </ScrollView>
@@ -342,6 +356,8 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#ddd',
     backgroundColor: '#fff',
+    alignItems: 'center',
   },
+  streakCardPressed: { opacity: 0.75 },
   streakCardYou: { borderColor: '#bbb', backgroundColor: '#f5f5f5' },
 });
