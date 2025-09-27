@@ -6,8 +6,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/lib/supabase';
 import { devSignIn, getDevUserId, savePRRow } from '@/lib/data';
-import * as FileSystem from 'expo-file-system';
-import { decode as atob } from 'base-64';
 
 
 type Lift = 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
@@ -118,7 +116,7 @@ export default function AddPRScreen() {
   const [weightKg, setWeightKg] = useState<string>('');
   const [bodyweightKg, setBodyweightKg] = useState<string>('');
   const [age, setAge] = useState<string>('');
-  const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [videoAsset, setVideoAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [selectedOld, setSelectedOld] = useState<OldPR | null>(null);
   const [oldForLift, setOldForLift] = useState<OldPR[]>([]);
   const [loadingHistory, setLoadingHistory] = useState<boolean>(true);
@@ -127,6 +125,8 @@ export default function AddPRScreen() {
   const [result, setResult] = useState<null | {
     old?: OldPR; newWeight: number; deltaKg: number; oldPct?: number; newPct?: number; deltaPct?: number;
   }>(null);
+
+  const videoUri = videoAsset?.uri ?? null;
 
   // Load history for selected lift from Supabase (falls back to local data if none)
   useEffect(() => {
@@ -190,27 +190,39 @@ export default function AddPRScreen() {
       quality: 0.8,
     });
     if (!res.canceled && res.assets?.length) {
-      setVideoUri(res.assets[0].uri);
+      setVideoAsset(res.assets[0]);
     }
   };
 
-  async function uploadPRVideo(uri: string, userId: string): Promise<string> {
-    // Read the file as base64 (works reliably on Android/iOS)
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  function buildUploadPath(userId: string, asset: ImagePicker.ImagePickerAsset, contentType: string) {
+    const uriSegments = asset.uri.split('/');
+    const lastSegment = uriSegments[uriSegments.length - 1] ?? '';
+    const providedName = asset.fileName || lastSegment || 'video.mp4';
+    const nameParts = providedName.split('.');
+    const extFromName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+    const extFromType = contentType.includes('/') ? contentType.split('/')[1] : '';
+    const extension = ((extFromName || extFromType || 'mp4').toLowerCase()).replace(/[^a-z0-9]/g, '') || 'mp4';
+    const baseName = (extFromName ? nameParts.slice(0, -1).join('.') : providedName) || 'video';
+    const safeBase = baseName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const finalName = `${safeBase}.${extension}`;
+    return `${userId}/${Date.now()}-${finalName}`;
+  }
 
+  async function uploadPRVideo(asset: ImagePicker.ImagePickerAsset, userId: string): Promise<string> {
+    const response = await fetch(asset.uri);
+    if (!response.ok) {
+      throw new Error('Could not read video file for upload.');
+    }
 
-    // Convert base64 -> Uint8Array (Supabase accepts ArrayBuffer/Uint8Array)
-    const binary = atob(base64);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = await response.blob();
+    const contentType = asset.mimeType || blob.type || 'video/mp4';
+    const fileName = buildUploadPath(userId, asset, contentType);
 
-    const fileName = `${userId}/${Date.now()}.mp4`;
     const { data, error } = await supabase
       .storage
       .from('pr-videos')
-      .upload(fileName, bytes, {
-        contentType: 'video/mp4',
+      .upload(fileName, blob, {
+        contentType,
         upsert: false,
       });
 
@@ -239,9 +251,9 @@ export default function AddPRScreen() {
 
       // optional video upload
       let videoUrl: string | null = null;
-      if (videoUri) {
+      if (videoAsset) {
         try {
-          videoUrl = await uploadPRVideo(videoUri, userId);
+          videoUrl = await uploadPRVideo(videoAsset, userId);
         } catch (e: any) {
           console.warn('Video upload failed:', e?.message || e);
           alert('Could not upload video. Saving PR without video.');
