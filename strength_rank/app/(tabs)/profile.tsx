@@ -1,17 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 import { supabase } from '@/lib/supabase';
-import { devSignIn, fetchProfileAndCurrentPRs, getDevUserId } from '@/lib/data';
+import { devSignIn, fetchCurrentStreak, fetchProfileAndCurrentPRs, getDevUserId } from '@/lib/data';
+import type { Lift } from '@/lib/data';
 
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { decode as atob } from 'base-64';
 
-type Lift = 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
 const LIFTS: Lift[] = ['Squat', 'Bench', 'Deadlift', 'Overhead Press'];
 
 type ProfileView = {
@@ -42,6 +42,7 @@ function Icon({ name, size = 14 }: { name: string; size?: number }) {
     edit: '✏️',
     total: '➕',
     ratio: '📈',
+    streak: '🔥',
   };
   return <ThemedText style={{ fontSize: size }}>{map[name] || '•'}</ThemedText>;
 }
@@ -75,6 +76,7 @@ export default function ProfileScreen() {
     prs: { Squat: undefined, Bench: undefined, Deadlift: undefined, 'Overhead Press': undefined },
     avatarUri: null,
   });
+  const [streakDays, setStreakDays] = useState(0);
 
   // Load profile + current PRs
   useEffect(() => {
@@ -82,7 +84,10 @@ export default function ProfileScreen() {
     (async () => {
       try {
         const userId = await getDevUserId();
-        const { profile: p, prs } = await fetchProfileAndCurrentPRs(userId);
+        const [{ profile: p, prs }, streak] = await Promise.all([
+          fetchProfileAndCurrentPRs(userId),
+          fetchCurrentStreak(userId),
+        ]);
 
         const prsRecord: Record<Lift, number | undefined> = {
           Squat: undefined,
@@ -111,7 +116,10 @@ export default function ProfileScreen() {
           avatarUri: p?.avatar_url ?? null,
         };
 
-        if (!cancel) setProfile(mapped);
+        if (!cancel) {
+          setProfile(mapped);
+          setStreakDays(streak);
+        }
       } catch (e: any) {
         console.warn('Profile load failed:', e?.message || e);
         alert(`Profile load failed:\n${e?.message || e}`);
@@ -262,6 +270,15 @@ export default function ProfileScreen() {
               />
               <FieldRow label="Location" value={profile.location} icon="location" />
               <FieldRow label="Gym" value={profile.gym} icon="gym" />
+              <FieldRow
+                label="Consistency streak"
+                value={
+                  streakDays > 0
+                    ? `${streakDays} day${streakDays === 1 ? '' : 's'}`
+                    : undefined
+                }
+                icon="streak"
+              />
               <FieldRow
                 label="Joined"
                 value={profile.joinedISO ? new Date(profile.joinedISO).toDateString() : undefined}

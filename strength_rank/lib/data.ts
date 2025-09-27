@@ -25,6 +25,25 @@ export async function devSignIn() {
   });
 }
 
+/** Look up a user's id by handle. */
+export async function getUserIdByHandle(handle: string): Promise<string | null> {
+  const normalized = handle.startsWith('@') ? handle : `@${handle}`;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('handle', normalized)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id ?? null;
+}
+
+/** Fetch profile and PRs by handle (falls back to null if missing). */
+export async function fetchProfileAndCurrentPRsByHandle(handle: string) {
+  const userId = await getUserIdByHandle(handle);
+  if (!userId) return { profile: null, prs: [] };
+  return fetchProfileAndCurrentPRs(userId);
+}
+
 /**
  * Profile details + current PRs for a user.
  * Uses the materialized view `current_prs` to fetch each lift's best.
@@ -177,4 +196,49 @@ export async function savePRRow(opts: {
     performed_at: opts.performedAt ?? new Date().toISOString(),
   });
   if (error) throw error;
+}
+
+/** Compute a user's current daily streak based on lift entries. */
+export async function fetchCurrentStreak(userId: string, maxEntries = 400): Promise<number> {
+  const { data, error } = await supabase
+    .from('lift_prs')
+    .select('performed_at')
+    .eq('user_id', userId)
+    .order('performed_at', { ascending: false })
+    .limit(maxEntries);
+
+  if (error) throw error;
+
+  const dates = new Set<string>();
+  (data || []).forEach((row: any) => {
+    if (!row?.performed_at) return;
+    const iso = new Date(row.performed_at).toISOString().slice(0, 10);
+    dates.add(iso);
+  });
+
+  const sorted = Array.from(dates).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  if (!sorted.length) return 0;
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  let anchor = today.getTime();
+  let streak = 0;
+
+  for (const iso of sorted) {
+    const day = new Date(`${iso}T00:00:00Z`).getTime();
+    if (Number.isNaN(day)) continue;
+
+    if (day > anchor) {
+      anchor = day;
+    }
+
+    const diff = anchor - day;
+    if (diff > dayMs) break;
+
+    streak += 1;
+    anchor = day - dayMs;
+  }
+
+  return streak;
 }
