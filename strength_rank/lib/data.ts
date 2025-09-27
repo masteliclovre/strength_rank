@@ -163,6 +163,7 @@ export async function savePRRow(opts: {
   bodyweightKg?: number | null;
   age?: number | null;
   videoUrl?: string | null;
+  performedAt?: string;
 }) {
   const { error } = await supabase.from('lift_prs').insert({
     user_id: opts.userId,
@@ -173,6 +174,7 @@ export async function savePRRow(opts: {
     age_at_lift: opts.age ?? null,
     video_url: opts.videoUrl ?? null,
     verify: 'unverified',
+    performed_at: opts.performedAt ?? new Date().toISOString(),
   });
   if (error) throw error;
 }
