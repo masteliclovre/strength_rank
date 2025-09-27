@@ -14,10 +14,12 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
+import { Video, ResizeMode } from 'expo-av';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { supabase } from '@/lib/supabase';
 import { ensureSignedIn, resolveCurrentUserId } from '@/lib/auth';
+import { pickPrVideoFromGallery, uploadPrVideo, type PrVideoAsset } from '@/lib/pr-video';
 
 // Types
 type Lift = 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
@@ -149,11 +151,19 @@ function AddPrModal({
   const [lift, setLift] = useState<Lift>(initialLift);
   const [weight, setWeight] = useState<string>('');
   const [reps, setReps] = useState<string>('1');
-  const [videoUrl, setVideoUrl] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [myBw, setMyBw] = useState<number | undefined>(undefined);
+  const [videoAsset, setVideoAsset] = useState<PrVideoAsset | null>(null);
 
   useEffect(() => setLift(initialLift), [initialLift]);
+
+  useEffect(() => {
+    if (!visible) {
+      setWeight('');
+      setReps('1');
+      setVideoAsset(null);
+    }
+  }, [visible]);
 
   useEffect(() => {
     let cancel = false;
@@ -172,6 +182,15 @@ function AddPrModal({
     return () => { cancel = true; };
   }, []);
 
+  const attachVideo = async () => {
+    const asset = await pickPrVideoFromGallery();
+    if (asset) {
+      setVideoAsset(asset);
+    }
+  };
+
+  const removeVideo = () => setVideoAsset(null);
+
   const save = async () => {
     const w = Number(weight);
     const r = Math.max(1, Number(reps) || 1);
@@ -184,6 +203,16 @@ function AddPrModal({
       const userId = await ensureSignedIn();
       if (!userId) throw new Error('Not signed in.');
 
+      let uploadedVideoUrl: string | null = null;
+      if (videoAsset) {
+        try {
+          uploadedVideoUrl = await uploadPrVideo(videoAsset, userId);
+        } catch (e: any) {
+          console.warn('Video upload failed:', e?.message || e);
+          alert('Could not upload video. Saving PR without video.');
+        }
+      }
+
       const { error } = await supabase.from('lift_prs').insert({
         user_id: userId,
         lift,
@@ -193,11 +222,14 @@ function AddPrModal({
         age_at_lift: null,
         gym_id: gymId,
         performed_at: new Date().toISOString().slice(0, 10),
-        video_url: videoUrl || null,
+        video_url: uploadedVideoUrl,
         verify: 'unverified',
       } as any);
 
       if (error) throw error;
+      setWeight('');
+      setReps('1');
+      setVideoAsset(null);
       onClose();
       onSaved();
       alert(`PR saved: ${lift} ${w} kg @ ${gymName}`);
@@ -251,17 +283,35 @@ function AddPrModal({
             </View>
           </View>
 
-          <View style={{ marginTop: 8 }}>
-            <ThemedText style={styles.inputLabel}>Video URL (optional)</ThemedText>
-            <TextInput
-              value={videoUrl}
-              onChangeText={setVideoUrl}
-              placeholder="https://…"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-            />
-          </View>
+          <Pressable onPress={attachVideo} style={styles.modalVideoBtn}>
+            <ThemedText style={{ fontWeight: '600' }}>
+              {videoAsset ? 'Change attached video' : 'Attach video from gallery'}
+            </ThemedText>
+          </Pressable>
+          {videoAsset ? (
+            <>
+              <View style={styles.modalVideoPreview}>
+                <Video
+                  source={{ uri: videoAsset.uri }}
+                  style={{ width: '100%', height: 180 }}
+                  useNativeControls
+                  resizeMode={ResizeMode.COVER}
+                />
+              </View>
+              <View style={styles.modalVideoActions}>
+                <ThemedText style={styles.modalVideoMeta} numberOfLines={1}>
+                  {videoAsset.fileName || videoAsset.uri}
+                </ThemedText>
+                <Pressable onPress={removeVideo}>
+                  <ThemedText style={styles.modalVideoRemove}>Remove video</ThemedText>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <ThemedText style={styles.modalVideoMeta}>
+              Optional: attach a clip to help verifiers.
+            </ThemedText>
+          )}
 
           <View style={{ marginTop: 8 }}>
             <ThemedText style={styles.inputLabel}>Bodyweight (kg, auto)</ThemedText>
@@ -732,6 +782,30 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
   },
+  modalVideoBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ddd',
+    backgroundColor: '#f7f7f7',
+  },
+  modalVideoPreview: {
+    marginTop: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  modalVideoActions: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalVideoMeta: { fontSize: 12, opacity: 0.7, flex: 1 },
+  modalVideoRemove: { color: '#b00020', fontWeight: '600' },
   inputWrap: { flex: 1 },
   inputWrapSmall: { width: 90 },
   inputLabel: { fontSize: 12, opacity: 0.7, marginBottom: 4 },
