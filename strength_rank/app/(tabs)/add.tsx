@@ -260,8 +260,18 @@ export default function AddPRScreen() {
         }
       }
 
+      const performedAt = new Date().toISOString();
+
       // insert PR row
-      await savePRRow({ userId, lift, weightKg: w, bodyweightKg: bw, age: a, videoUrl });
+      await savePRRow({
+        userId,
+        lift,
+        weightKg: w,
+        bodyweightKg: bw,
+        age: a,
+        videoUrl,
+        performedAt,
+      });
 
       // update UI: recompute improvements + append to local history
       const old = selectedOld ?? oldForLift[oldForLift.length - 1];
@@ -273,7 +283,7 @@ export default function AddPRScreen() {
       setResult({ old, newWeight: w, deltaKg, oldPct, newPct, deltaPct });
 
       // append to local history so charts update without refetch
-      const todayISO = new Date().toISOString().slice(0, 10);
+      const todayISO = performedAt.slice(0, 10);
       setOldForLift((cur) => [...cur, {
         id: `local-${Date.now()}`,
         date: todayISO,
