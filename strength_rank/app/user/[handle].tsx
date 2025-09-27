@@ -30,6 +30,17 @@ type ProfileView = {
   avatarUri?: string | null;
 };
 
+function getWeightCategory(bodyweightKg?: number | null) {
+  if (bodyweightKg == null) return undefined;
+  const bw = Number(bodyweightKg);
+  if (!Number.isFinite(bw) || bw <= 0) return undefined;
+  if (bw < 60) return '<60';
+  if (bw < 75) return '60-75';
+  if (bw < 90) return '75-90';
+  if (bw < 105) return '90-105';
+  return '105+';
+}
+
 function Icon({ name, size = 14 }: { name: string; size?: number }) {
   const map: Record<string, string> = {
     email: '✉️',
@@ -43,11 +54,20 @@ function Icon({ name, size = 14 }: { name: string; size?: number }) {
     total: '➕',
     ratio: '📈',
     streak: '🔥',
+    category: '🏷️',
   };
   return <ThemedText style={{ fontSize: size }}>{map[name] || '•'}</ThemedText>;
 }
 
-function FieldRow({ label, value, icon }: { label: string; value?: string | number; icon?: string }) {
+function FieldRow({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value?: string | number;
+  icon?: string;
+}) {
   return (
     <View style={styles.fieldRow}>
       <View style={{ width: 22 }}>{icon ? <Icon name={icon} /> : null}</View>
@@ -57,13 +77,25 @@ function FieldRow({ label, value, icon }: { label: string; value?: string | numb
   );
 }
 
-function PRRow({ lift, kg }: { lift: Lift; kg?: number }) {
+function PRRow({
+  lift,
+  kg,
+  bodyweightKg,
+}: {
+  lift: Lift;
+  kg?: number;
+  bodyweightKg?: number | null;
+}) {
+  const ratio = kg != null && bodyweightKg && bodyweightKg > 0 ? kg / bodyweightKg : null;
+  const subtitle =
+    kg == null ? 'No entry yet' : ratio != null ? `${ratio.toFixed(2)}× BW` : '—';
   return (
     <View style={styles.prRow}>
-      <ThemedText type="defaultSemiBold" style={{ width: 140 }}>
-        {lift}
-      </ThemedText>
-      <ThemedText>{kg != null ? `${kg} kg` : '—'}</ThemedText>
+      <View>
+        <ThemedText type="defaultSemiBold">{lift}</ThemedText>
+        <ThemedText style={styles.prSubtitle}>{subtitle}</ThemedText>
+      </View>
+      <ThemedText style={styles.prValue}>{kg != null ? `${kg} kg` : '—'}</ThemedText>
     </View>
   );
 }
@@ -180,10 +212,16 @@ export default function UserProfileScreen() {
     return LIFTS.reduce((sum, l) => sum + (profile.prs[l] ?? 0), 0);
   }, [profile]);
 
+  const bodyweightKg = profile?.bodyweightKg ?? null;
   const totalRatio = useMemo(() => {
-    if (!profile || !profile.bodyweightKg) return 0;
-    return total / profile.bodyweightKg;
-  }, [profile, total]);
+    if (!bodyweightKg || bodyweightKg <= 0) return null;
+    return total / bodyweightKg;
+  }, [bodyweightKg, total]);
+
+  const weightCategory = useMemo(
+    () => getWeightCategory(bodyweightKg),
+    [bodyweightKg]
+  );
 
   const streakLabel = streakDays > 0 ? `${streakDays} day${streakDays === 1 ? '' : 's'}` : undefined;
 
@@ -261,7 +299,9 @@ export default function UserProfileScreen() {
             </View>
             <View style={styles.summaryItem}>
               <Icon name="ratio" />
-              <ThemedText style={styles.summaryValue}>{totalRatio.toFixed(2)}</ThemedText>
+              <ThemedText style={styles.summaryValue}>
+                {totalRatio != null ? totalRatio.toFixed(2) : '—'}
+              </ThemedText>
               <ThemedText style={styles.summaryLabel}>Total / BW</ThemedText>
             </View>
             <View style={styles.summaryItem}>
@@ -295,33 +335,18 @@ export default function UserProfileScreen() {
               <FieldRow label="Email" value={profile?.email} icon="email" />
               <FieldRow label="Age" value={profile?.age} icon="age" />
               <FieldRow label="Gender" value={profile?.gender} icon="gender" />
-              <FieldRow
-                label="Bodyweight"
-                value={profile?.bodyweightKg ? `${profile.bodyweightKg} kg` : undefined}
-                icon="weight"
-              />
-              <FieldRow
-                label="Height"
-                value={profile?.heightCm ? `${profile.heightCm} cm` : undefined}
-                icon="height"
-              />
+              <FieldRow label="Weight category" value={weightCategory} icon="category" />
               <FieldRow label="Location" value={profile?.location} icon="location" />
-              <FieldRow label="Gym" value={profile?.gym} icon="gym" />
               <FieldRow label="Consistency streak" value={streakLabel} icon="streak" />
-              <FieldRow
-                label="Joined"
-                value={
-                  profile?.joinedISO ? new Date(profile.joinedISO).toDateString() : undefined
-                }
-                icon="joined"
-              />
             </View>
 
-            <View style={styles.card}>
+            <View style={[styles.card, styles.prCard]}>
               <ThemedText type="defaultSemiBold">PR Lifts</ThemedText>
-              {LIFTS.map((l) => (
-                <PRRow key={l} lift={l} kg={profile?.prs[l]} />
-              ))}
+              <View style={styles.prList}>
+                {LIFTS.map((l) => (
+                  <PRRow key={l} lift={l} kg={profile?.prs[l]} bodyweightKg={bodyweightKg} />
+                ))}
+              </View>
             </View>
           </>
         )}
@@ -364,8 +389,16 @@ const styles = StyleSheet.create({
   prRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#f4f4f4',
   },
+  prSubtitle: { fontSize: 12, opacity: 0.6, marginTop: 2 },
+  prValue: { fontSize: 16, fontWeight: '700' },
+  prList: { gap: 10, marginTop: 12 },
+  prCard: { paddingBottom: 20 },
   followBtn: {
     marginTop: 12,
     paddingHorizontal: 18,
