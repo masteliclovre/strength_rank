@@ -75,14 +75,27 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const normalizeText = (value: string) =>
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, ' ')
+      .trim()
+      .toLowerCase();
+
   const filteredGyms = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return gyms;
-    return gyms.filter(
-      (g) =>
-        g.name.toLowerCase().includes(q) ||
-        (g.city || '').toLowerCase().includes(q)
-    );
+    const normalizedQuery = normalizeText(query);
+    if (!normalizedQuery) return gyms;
+
+    const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+
+    return gyms.filter((g) => {
+      const searchableText = `${normalizeText(g.name)} ${normalizeText(g.city || '')}`.trim();
+
+      if (!searchableText) return false;
+
+      return queryTokens.every((token) => searchableText.includes(token));
+    });
   }, [gyms, query]);
 
   const selectedGym = useMemo(
