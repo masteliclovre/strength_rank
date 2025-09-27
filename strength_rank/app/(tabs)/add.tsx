@@ -12,6 +12,7 @@ import { decode as atob } from 'base-64';
 
 type Lift = 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
 type OldPR = { id: string; date: string; lift: Lift; weightKg: number; bodyweightKg: number; age: number };
+type Gym = { id: string; name: string; city?: string | null };
 
 const LIFTS: Lift[] = ['Squat', 'Bench', 'Deadlift', 'Overhead Press'];
 
@@ -120,6 +121,10 @@ export default function AddPRScreen() {
   const [age, setAge] = useState<string>('');
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [selectedOld, setSelectedOld] = useState<OldPR | null>(null);
+  const [gyms, setGyms] = useState<Gym[]>([]);
+  const [gymQuery, setGymQuery] = useState('');
+  const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
+  const [recentGymIds, setRecentGymIds] = useState<string[]>([]);
   const [oldForLift, setOldForLift] = useState<OldPR[]>([]);
   const [loadingHistory, setLoadingHistory] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -170,6 +175,77 @@ export default function AddPRScreen() {
     })();
     return () => { cancel = true; };
   }, [lift]);
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('gyms')
+          .select('id, name, city')
+          .order('name', { ascending: true })
+          .limit(500);
+
+        if (error) throw error;
+
+        if (!cancel) {
+          const rows = (data ?? []).map((g: any) => ({
+            id: g.id as string,
+            name: g.name as string,
+            city: (g.city as string | null) ?? null,
+          }));
+          setGyms(rows);
+        }
+      } catch {
+        if (!cancel) setGyms([]);
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  const normalizeText = (value: string) =>
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, ' ')
+      .trim()
+      .toLowerCase();
+
+  const filteredGyms = useMemo(() => {
+    const normalizedQuery = normalizeText(gymQuery);
+    if (!normalizedQuery) return gyms;
+    const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+    return gyms.filter((g) => {
+      const searchable = `${normalizeText(g.name)} ${normalizeText(g.city || '')}`.trim();
+      if (!searchable) return false;
+      return tokens.every((token) => searchable.includes(token));
+    });
+  }, [gymQuery, gyms]);
+
+  const recentGyms = useMemo(
+    () =>
+      recentGymIds
+        .map((id) => gyms.find((g) => g.id === id) || null)
+        .filter((g): g is Gym => Boolean(g)),
+    [gyms, recentGymIds]
+  );
+
+  const selectedGym = useMemo(
+    () => gyms.find((g) => g.id === selectedGymId) || null,
+    [gyms, selectedGymId]
+  );
+
+  const selectGym = (gym: Gym | null) => {
+    setSelectedGymId(gym?.id ?? null);
+    if (gym?.id) {
+      setRecentGymIds((cur) => {
+        const next = [gym.id, ...cur.filter((id) => id !== gym.id)];
+        return next.slice(0, 6);
+      });
+    }
+  };
 
   function selectOldPR(pr: OldPR) {
     setSelectedOld(pr);
@@ -249,7 +325,15 @@ export default function AddPRScreen() {
       }
 
       // insert PR row
-      await savePRRow({ userId, lift, weightKg: w, bodyweightKg: bw, age: a, videoUrl });
+      await savePRRow({
+        userId,
+        lift,
+        weightKg: w,
+        bodyweightKg: bw,
+        age: a,
+        videoUrl,
+        gymId: selectedGymId ?? null,
+      });
 
       // update UI: recompute improvements + append to local history
       const old = selectedOld ?? oldForLift[oldForLift.length - 1];
@@ -326,6 +410,68 @@ export default function AddPRScreen() {
             onChangeText={setAge}
             style={styles.input}
           />
+
+          <View style={styles.gymSection}>
+            <ThemedText type="defaultSemiBold">Gym</ThemedText>
+            <ThemedText style={{ opacity: 0.7, marginTop: 4 }}>
+              Tag the gym so this PR shows on the right leaderboard.
+            </ThemedText>
+
+            <TextInput
+              placeholder="Search gyms (name or city)…"
+              value={gymQuery}
+              onChangeText={setGymQuery}
+              style={[styles.input, styles.gymSearch]}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            {recentGyms.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.gymRecentRow}
+              >
+                {recentGyms.map((g) => (
+                  <Chip
+                    key={g.id}
+                    label={g.name}
+                    selected={selectedGymId === g.id}
+                    onPress={() => selectGym(g)}
+                  />
+                ))}
+              </ScrollView>
+            )}
+
+            <View style={styles.gymList}>
+              {filteredGyms.slice(0, 6).map((g) => (
+                <Pressable
+                  key={g.id}
+                  onPress={() => selectGym(g)}
+                  style={[styles.gymOption, selectedGymId === g.id && styles.gymOptionSel]}
+                >
+                  <ThemedText type="defaultSemiBold">{g.name}</ThemedText>
+                  {!!g.city && <ThemedText style={{ opacity: 0.6 }}>{g.city}</ThemedText>}
+                </Pressable>
+              ))}
+              {filteredGyms.length === 0 && (
+                <ThemedText style={{ opacity: 0.6 }}>No gyms match your search.</ThemedText>
+              )}
+            </View>
+
+            <Pressable
+              onPress={() => selectGym(null)}
+              style={[styles.gymOption, selectedGymId == null && styles.gymOptionSel]}
+            >
+              <ThemedText>Personal / unspecified gym</ThemedText>
+            </Pressable>
+
+            {selectedGym && (
+              <ThemedText style={{ marginTop: 6, opacity: 0.7 }}>
+                Selected gym: {selectedGym.name}
+              </ThemedText>
+            )}
+          </View>
 
           {/* Attach video */}
           <Pressable onPress={onAttachVideo} style={styles.videoBtn}>
@@ -433,6 +579,15 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#ccc',
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10,
   },
+  gymSection: { marginTop: 12 },
+  gymSearch: { marginTop: 10 },
+  gymRecentRow: { gap: 8, paddingVertical: 6 },
+  gymList: { marginTop: 8, gap: 8 },
+  gymOption: {
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#ddd',
+    borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#fff',
+  },
+  gymOptionSel: { borderColor: '#aaa', backgroundColor: '#f0f0f0' },
   videoBtn: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12,
