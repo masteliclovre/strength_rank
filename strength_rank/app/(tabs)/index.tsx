@@ -38,6 +38,7 @@ export default function HomeScreen() {
   const [gyms, setGyms] = useState<Gym[]>([]);
   const [query, setQuery] = useState('');
   const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
+  const [recentGyms, setRecentGyms] = useState<Gym[]>([]);
 
   // Load gyms
   useEffect(() => {
@@ -106,6 +107,10 @@ export default function HomeScreen() {
   const centerOnGym = (g: Gym) => {
     Keyboard.dismiss();
     setSelectedGymId(g.id);
+    setRecentGyms((prev) => {
+      const cleaned = prev.filter((item) => item.id !== g.id);
+      return [g, ...cleaned].slice(0, 10);
+    });
     mapRef.current?.animateToRegion(
       {
         latitude: g.lat,
@@ -261,6 +266,41 @@ export default function HomeScreen() {
           })}
         </ScrollView>
       </View>
+
+      {/* Recently searched gyms */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <ThemedText style={{ marginRight: 6 }}>🧭</ThemedText>
+          <ThemedText type="defaultSemiBold">Recently searched gyms</ThemedText>
+        </View>
+
+        {recentGyms.length === 0 ? (
+          <ThemedText style={{ opacity: 0.6 }}>Search for a gym to see it here.</ThemedText>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.recentRow}
+          >
+            {recentGyms.map((gym) => (
+              <Pressable
+                key={gym.id}
+                onPress={() => centerOnGym(gym)}
+                style={({ pressed }) => [styles.recentCard, pressed && styles.recentCardPressed]}
+              >
+                <ThemedText type="defaultSemiBold" numberOfLines={1}>
+                  {gym.name}
+                </ThemedText>
+                {gym.city ? (
+                  <ThemedText style={{ opacity: 0.6 }} numberOfLines={1}>
+                    {gym.city}
+                  </ThemedText>
+                ) : null}
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+      </View>
     </View>
   );
 
@@ -360,4 +400,15 @@ const styles = StyleSheet.create({
   },
   streakCardPressed: { opacity: 0.75 },
   streakCardYou: { borderColor: '#bbb', backgroundColor: '#f5f5f5' },
+  recentRow: { gap: 10, paddingRight: 4 },
+  recentCard: {
+    minWidth: 140,
+    maxWidth: 200,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+  },
+  recentCardPressed: { opacity: 0.75 },
 });
