@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
@@ -47,11 +48,13 @@ function Chip({
   selected,
   onPress,
   disabled,
+  style,
 }: {
   label: string;
   selected?: boolean;
   onPress?: () => void;
   disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <Pressable
@@ -59,11 +62,12 @@ function Chip({
       disabled={disabled}
       style={[
         styles.chip,
+        style,
         selected && styles.chipSel,
         disabled && { opacity: 0.4 },
       ]}
     >
-      <ThemedText style={{ fontWeight: selected ? '700' : '500' }}>{label}</ThemedText>
+      <ThemedText style={[styles.chipText, selected && styles.chipTextSel]}>{label}</ThemedText>
     </Pressable>
   );
 }
@@ -348,7 +352,8 @@ export default function LeaderboardScreen() {
   const [scope, setScope] = useState<'Global' | 'Filtered'>('Global');
 
   const [friendsOnly, setFriendsOnly] = useState(false);
-  const [gender, setGender] = useState<'All' | 'Male' | 'Female' | 'Other'>('All');
+  const genderOptions = ['All', 'Male', 'Female', 'Other'] as const;
+  const [gender, setGender] = useState<(typeof genderOptions)[number]>('All');
   const ageGroups = ['All', 'U23', '24-29', '30-39', '40+'] as const;
   const [ageGroup, setAgeGroup] = useState<(typeof ageGroups)[number]>('All');
   const weightClasses = ['All', '<60', '60-75', '75-90', '90-105', '105+'] as const;
@@ -357,7 +362,6 @@ export default function LeaderboardScreen() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Athlete[]>([]);
   const [followeeIds, setFolloweeIds] = useState<Set<string>>(new Set());
-  const [activeLifts, setActiveLifts] = useState<Lift[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
 
   const [showAddPr, setShowAddPr] = useState(false);
@@ -434,26 +438,6 @@ export default function LeaderboardScreen() {
     })();
     return () => { cancel = true; };
   }, [lift, gymId, refreshTick]);
-
-  // Active lifts at this gym
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from('lift_prs')
-          .select('lift')
-          .eq('gym_id', gymId)
-          .limit(3000);
-        if (error) throw error;
-        const unique = Array.from(new Set((data || []).map((d) => d.lift))) as Lift[];
-        if (!cancel) setActiveLifts(unique);
-      } catch {
-        if (!cancel) setActiveLifts([]);
-      }
-    })();
-    return () => { cancel = true; };
-  }, [gymId, refreshTick]);
 
   // Followees (for friends filter)
   useFocusEffect(
@@ -541,19 +525,71 @@ export default function LeaderboardScreen() {
       </ScrollView>
 
       {/* Scope + filters */}
-      <Seg items={['Global', 'Filtered']} value={scope} onChange={(v) => setScope(v as any)} />
-      {scope === 'Filtered' && (
-        <View style={styles.filters}>
-          <Chip
-            label={friendsOnly ? 'Friends ✓' : 'Friends only'}
-            selected={friendsOnly}
-            onPress={() => setFriendsOnly((s) => !s)}
-          />
-          <Seg items={['All', 'Male', 'Female']} value={gender} onChange={(v) => setGender(v as any)} />
-          <Seg items={[...ageGroups]} value={ageGroup} onChange={(v) => setAgeGroup(v as any)} />
-          <Seg items={[...weightClasses]} value={weightClass} onChange={(v) => setWeightClass(v as any)} />
-        </View>
-      )}
+      <View style={styles.filterCard}>
+        <ThemedText type="defaultSemiBold">Refine leaderboard</ThemedText>
+        <Seg items={['Global', 'Filtered']} value={scope} onChange={(v) => setScope(v as any)} />
+        {scope === 'Filtered' && (
+          <>
+            <View style={styles.filterSection}>
+              <ThemedText style={styles.filterLabel}>Community</ThemedText>
+              <View style={styles.filterPillRow}>
+                <Chip
+                  label="All members"
+                  selected={!friendsOnly}
+                  onPress={() => setFriendsOnly(false)}
+                />
+                <Chip
+                  label="Friends only"
+                  selected={friendsOnly}
+                  onPress={() => setFriendsOnly(true)}
+                />
+              </View>
+            </View>
+
+            <View style={styles.filterSection}>
+              <ThemedText style={styles.filterLabel}>Gender</ThemedText>
+              <View style={styles.filterPillRow}>
+                {genderOptions.map((option) => (
+                  <Chip
+                    key={option}
+                    label={option}
+                    selected={gender === option}
+                    onPress={() => setGender(option)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.filterSection}>
+              <ThemedText style={styles.filterLabel}>Age group</ThemedText>
+              <View style={styles.filterPillRow}>
+                {ageGroups.map((group) => (
+                  <Chip
+                    key={group}
+                    label={group}
+                    selected={ageGroup === group}
+                    onPress={() => setAgeGroup(group)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.filterSection}>
+              <ThemedText style={styles.filterLabel}>Weight class</ThemedText>
+              <View style={styles.filterPillRow}>
+                {weightClasses.map((group) => (
+                  <Chip
+                    key={group}
+                    label={group}
+                    selected={weightClass === group}
+                    onPress={() => setWeightClass(group)}
+                  />
+                ))}
+              </View>
+            </View>
+          </>
+        )}
+      </View>
 
       {/* Your placement + distribution */}
       <View style={styles.card}>
@@ -590,24 +626,9 @@ export default function LeaderboardScreen() {
           ))}
         </View>
 
-        <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+        <View style={{ marginTop: 10 }}>
           <Pressable style={styles.btn} onPress={openAddPr}>
             <ThemedText style={{ fontWeight: '700' }}>Add PR for {lift}</ThemedText>
-          </Pressable>
-
-          <Pressable
-            style={styles.btn}
-            onPress={() => {
-              const notActive = LIFTS.filter((l) => !activeLifts.includes(l));
-              if (!notActive.length) {
-                alert('All supported lifts already have attempts at this gym.');
-                return;
-              }
-              setLift(notActive[0]);
-              openAddPr();
-            }}
-          >
-            <ThemedText style={{ fontWeight: '700' }}>Add a new exercise</ThemedText>
           </Pressable>
         </View>
       </View>
@@ -694,33 +715,63 @@ const styles = StyleSheet.create({
 
   liftTabs: { gap: 8, marginTop: 10, paddingBottom: 6 },
   chip: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ccc',
-    backgroundColor: '#fafafa',
+    borderColor: '#d5d5d5',
+    backgroundColor: '#fff',
     marginRight: 8,
+    marginBottom: 8,
   },
-  chipSel: { backgroundColor: '#eaeaea', borderColor: '#bbb' },
+  chipSel: { backgroundColor: '#111', borderColor: '#111' },
+  chipText: { fontWeight: '600' },
+  chipTextSel: { color: '#fff' },
 
   seg: {
     flexDirection: 'row',
-    marginTop: 10,
-    borderRadius: 10,
-    overflow: 'hidden',
-    alignSelf: 'flex-start',
+    marginTop: 12,
+    borderRadius: 999,
+    backgroundColor: '#f0f0f0',
+    padding: 4,
+    alignSelf: 'stretch',
   },
   segItem: {
+    flex: 1,
+    alignItems: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ddd',
-    backgroundColor: '#f7f7f7',
+    paddingHorizontal: 14,
+    borderRadius: 999,
   },
-  segItemSel: { backgroundColor: '#eaeaea' },
+  segItemSel: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 2,
+    elevation: 2,
+  },
 
-  filters: { marginTop: 10, gap: 8 },
+  filterCard: {
+    marginTop: 16,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e3e3e3',
+    padding: 16,
+    backgroundColor: '#fafafa',
+  },
+  filterSection: { marginTop: 16 },
+  filterLabel: {
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    opacity: 0.6,
+  },
+  filterPillRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
 
   card: {
     marginTop: 14,
