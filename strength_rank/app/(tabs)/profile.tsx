@@ -8,7 +8,8 @@ import { Colors } from '@/constants/theme';
 import { useThemePreference } from '@/providers/theme-provider';
 
 import { supabase } from '@/lib/supabase';
-import { devSignIn, fetchCurrentStreak, fetchProfileAndCurrentPRs, getDevUserId } from '@/lib/data';
+import { fetchCurrentStreak, fetchProfileAndCurrentPRs } from '@/lib/data';
+import { ensureSignedIn, signOut } from '@/lib/auth';
 import type { Lift } from '@/lib/data';
 
 import * as ImagePicker from 'expo-image-picker';
@@ -81,6 +82,8 @@ export default function ProfileScreen() {
     avatarUri: null,
   });
   const [streakDays, setStreakDays] = useState(0);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const { colorScheme, themePreference, setThemePreference } = useThemePreference();
   const themeColors = Colors[colorScheme];
   const cardBackground = colorScheme === 'dark' ? '#1f1f23' : '#fff';
@@ -98,7 +101,8 @@ export default function ProfileScreen() {
     const runId = ++loadIdRef.current;
     setLoading(true);
     try {
-      const userId = await getDevUserId();
+      const userId = await ensureSignedIn();
+      if (!userId) throw new Error('You need to be signed in to view your profile.');
       const [{ profile: p, prs }, streak] = await Promise.all([
         fetchProfileAndCurrentPRs(userId),
         fetchCurrentStreak(userId),
@@ -204,8 +208,8 @@ export default function ProfileScreen() {
 
       // Upload to Supabase
       try {
-        await devSignIn();
-        const userId = await getDevUserId();
+        const userId = await ensureSignedIn();
+        if (!userId) throw new Error('You need to be signed in to update your avatar.');
 
         const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: 'base64' as any });
         const bytes = base64ToBytes(base64);
@@ -227,7 +231,7 @@ export default function ProfileScreen() {
         const { error: updErr } = await supabase
           .from('profiles')
           .update({ avatar_url: publicUrl })
-          .eq('handle', profile.handle);
+          .eq('id', userId);
         if (updErr) throw updErr;
 
         setProfile((cur) => ({ ...cur, avatarUri: publicUrl }));
@@ -241,6 +245,19 @@ export default function ProfileScreen() {
       alert(
         "Image Picker isn't available in this build. If you're using Expo Go, run npx expo install expo-image-picker and then restart with npx expo start -c."
       );
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      setSigningOut(true);
+      setSignOutError(null);
+      await signOut();
+    } catch (e: any) {
+      console.warn('Sign out failed:', e?.message || e);
+      setSignOutError(e?.message || 'Sign out failed. Please try again.');
+    } finally {
+      setSigningOut(false);
     }
   };
 
@@ -371,6 +388,24 @@ export default function ProfileScreen() {
                 <PRRow key={l} lift={l} kg={profile.prs[l]} dividerColor={dividerColor} />
               ))}
             </View>
+
+            <View style={[styles.card, { borderColor, backgroundColor: cardBackground }]}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={handleSignOut}
+                style={[styles.signOutButton, { borderColor }]}
+                disabled={signingOut}
+              >
+                {signingOut ? (
+                  <ActivityIndicator color={themeColors.text} />
+                ) : (
+                  <ThemedText style={styles.signOutText}>Sign out</ThemedText>
+                )}
+              </Pressable>
+              {signOutError ? (
+                <ThemedText style={styles.signOutError}>{signOutError}</ThemedText>
+              ) : null}
+            </View>
           </>
         )}
 
@@ -451,5 +486,20 @@ const styles = StyleSheet.create({
   },
   themeOptionText: {
     fontWeight: '600',
+  },
+  signOutButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  signOutText: {
+    fontWeight: '600',
+  },
+  signOutError: {
+    color: '#ef4444',
+    marginTop: 8,
+    textAlign: 'center',
   },
 });
