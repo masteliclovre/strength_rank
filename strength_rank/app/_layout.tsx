@@ -65,12 +65,27 @@ function RootNavigator() {
     [colorScheme]
   );
 
-  if (checkingSession) {
-    return (
-      <NavigationThemeProvider value={navigationTheme}>
+
+  return (
+    <NavigationThemeProvider value={navigationTheme}>
+      <Stack>
+
+        <Stack.Screen name="auth" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+        <Stack.Screen name="user/[handle]" options={{ title: 'Athlete' }} />
+
+      </Stack>
+      <StatusBar style="auto" />
+      {checkingSession ? (
         <View
+          pointerEvents="none"
           style={{
-            flex: 1,
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: navigationTheme.colors.background,
@@ -78,25 +93,7 @@ function RootNavigator() {
         >
           <ActivityIndicator />
         </View>
-        <StatusBar style="auto" />
-      </NavigationThemeProvider>
-    );
-  }
-
-  return (
-    <NavigationThemeProvider value={navigationTheme}>
-      <Stack>
-        {session ? (
-          <>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-            <Stack.Screen name="user/[handle]" options={{ title: 'Athlete' }} />
-          </>
-        ) : (
-          <Stack.Screen name="auth" options={{ headerShown: false }} />
-        )}
-      </Stack>
-      <StatusBar style="auto" />
+      ) : null}
     </NavigationThemeProvider>
   );
 }
