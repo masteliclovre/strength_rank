@@ -25,8 +25,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="leaderboard"
         options={{
-          title: 'Leaderboard',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="trophy.fill" color={color} />,
+          // Hide from the tab bar but keep the route accessible via navigation.
+          href: null,
         }}
       />
       <Tabs.Screen
