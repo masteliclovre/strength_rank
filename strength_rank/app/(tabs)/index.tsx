@@ -14,6 +14,7 @@ import {
 import MapView, { Callout, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
+import * as Location from 'expo-location';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { supabase } from '@/lib/supabase';
@@ -39,6 +40,10 @@ export default function HomeScreen() {
   const [query, setQuery] = useState('');
   const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
   const [recentGyms, setRecentGyms] = useState<Gym[]>([]);
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(
+    null
+  );
+  const [locationPrompt, setLocationPrompt] = useState<string | null>(null);
 
   // Load gyms
   useEffect(() => {
@@ -76,6 +81,50 @@ export default function HomeScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== Location.PermissionStatus.GRANTED) {
+          if (!cancelled) {
+            setLocationPrompt('Enable location to find gyms near you.');
+          }
+          return;
+        }
+
+        const latestLocation = await Location.getCurrentPositionAsync({});
+        if (cancelled) return;
+
+        const coords = {
+          latitude: latestLocation.coords.latitude,
+          longitude: latestLocation.coords.longitude,
+        };
+
+        setUserLocation(coords);
+        setLocationPrompt(null);
+        mapRef.current?.animateToRegion(
+          {
+            ...coords,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          },
+          450
+        );
+      } catch {
+        if (!cancelled) {
+          setLocationPrompt('Unable to fetch location right now.');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const normalizeText = (value: string) =>
     value
       .normalize('NFD')
@@ -84,20 +133,44 @@ export default function HomeScreen() {
       .trim()
       .toLowerCase();
 
+  const distanceBetween = (a: { latitude: number; longitude: number }, b: Gym) => {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const R = 6371; // km
+    const dLat = toRad(b.lat - a.latitude);
+    const dLon = toRad(b.lng - a.longitude);
+    const lat1 = toRad(a.latitude);
+    const lat2 = toRad(b.lat);
+
+    const haversine =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+    return R * c;
+  };
+
   const filteredGyms = useMemo(() => {
     const normalizedQuery = normalizeText(query);
-    if (!normalizedQuery) return gyms;
+    if (!normalizedQuery) {
+      if (!userLocation) return gyms;
+      return [...gyms].sort((a, b) => distanceBetween(userLocation, a) - distanceBetween(userLocation, b));
+    }
 
     const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
 
-    return gyms.filter((g) => {
+    const filtered = gyms.filter((g) => {
       const searchableText = `${normalizeText(g.name)} ${normalizeText(g.city || '')}`.trim();
 
       if (!searchableText) return false;
 
       return queryTokens.every((token) => searchableText.includes(token));
     });
-  }, [gyms, query]);
+
+    if (!userLocation) return filtered;
+
+    return filtered.sort(
+      (a, b) => distanceBetween(userLocation, a) - distanceBetween(userLocation, b)
+    );
+  }, [gyms, query, userLocation]);
 
   const selectedGym = useMemo(
     () => gyms.find((g) => g.id === selectedGymId) || null,
@@ -163,6 +236,13 @@ export default function HomeScreen() {
             longitudeDelta: 5,
           }}
         >
+          {userLocation && (
+            <Marker
+              coordinate={userLocation}
+              title="You are here"
+              pinColor="dodgerblue"
+            />
+          )}
           {gyms.map((g) => (
             <Marker
               key={g.id}
@@ -180,6 +260,11 @@ export default function HomeScreen() {
           ))}
         </MapView>
       </View>
+      {locationPrompt && (
+        <ThemedText style={{ textAlign: 'center', marginTop: 8, opacity: 0.7 }}>
+          {locationPrompt}
+        </ThemedText>
+      )}
 
       {/* Search */}
       <View style={styles.searchRow}>
