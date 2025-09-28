@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { ThemedText } from '@/components/themed-text';
@@ -11,6 +11,7 @@ import type { Lift } from '@/lib/data';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { decode as atob } from 'base-64';
+import { useFocusEffect } from '@react-navigation/native';
 
 const LIFTS: Lift[] = ['Squat', 'Bench', 'Deadlift', 'Overhead Press'];
 
@@ -78,59 +79,77 @@ export default function ProfileScreen() {
   });
   const [streakDays, setStreakDays] = useState(0);
 
+  const loadIdRef = useRef(0);
+  const hasFocusedRef = useRef(false);
+
+  const loadProfile = useCallback(async () => {
+    const runId = ++loadIdRef.current;
+    setLoading(true);
+    try {
+      const userId = await getDevUserId();
+      const [{ profile: p, prs }, streak] = await Promise.all([
+        fetchProfileAndCurrentPRs(userId),
+        fetchCurrentStreak(userId),
+      ]);
+
+      const prsRecord: Record<Lift, number | undefined> = {
+        Squat: undefined,
+        Bench: undefined,
+        Deadlift: undefined,
+        'Overhead Press': undefined,
+      };
+      (prs || []).forEach((row: any) => {
+        if (LIFTS.includes(row.lift)) {
+          prsRecord[row.lift as Lift] = Number(row.weight_kg);
+        }
+      });
+
+      const mapped: ProfileView = {
+        name: p?.full_name ?? 'Unknown',
+        handle: p?.handle ?? '@unknown',
+        email: p?.email_public ?? undefined,
+        age: p?.age ?? undefined,
+        gender: p?.gender ?? undefined,
+        bodyweightKg: p?.bodyweight_kg ?? undefined,
+        heightCm: p?.height_cm ?? undefined,
+        location: p?.location ?? undefined,
+        gym: p?.gym?.name ?? undefined,
+        joinedISO: p?.joined_at ?? undefined,
+        prs: prsRecord,
+        avatarUri: p?.avatar_url ?? null,
+      };
+
+      if (loadIdRef.current === runId) {
+        setProfile(mapped);
+        setStreakDays(streak);
+      }
+    } catch (e: any) {
+      console.warn('Profile load failed:', e?.message || e);
+      if (loadIdRef.current === runId) {
+        alert(`Profile load failed:\n${e?.message || e}`);
+      }
+    } finally {
+      if (loadIdRef.current === runId) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
   // Load profile + current PRs
   useEffect(() => {
-    let cancel = false;
-    (async () => {
-      try {
-        const userId = await getDevUserId();
-        const [{ profile: p, prs }, streak] = await Promise.all([
-          fetchProfileAndCurrentPRs(userId),
-          fetchCurrentStreak(userId),
-        ]);
+    loadProfile();
+  }, [loadProfile]);
 
-        const prsRecord: Record<Lift, number | undefined> = {
-          Squat: undefined,
-          Bench: undefined,
-          Deadlift: undefined,
-          'Overhead Press': undefined,
-        };
-        (prs || []).forEach((row: any) => {
-          if (LIFTS.includes(row.lift)) {
-            prsRecord[row.lift as Lift] = Number(row.weight_kg);
-          }
-        });
-
-        const mapped: ProfileView = {
-          name: p?.full_name ?? 'Unknown',
-          handle: p?.handle ?? '@unknown',
-          email: p?.email_public ?? undefined,
-          age: p?.age ?? undefined,
-          gender: p?.gender ?? undefined,
-          bodyweightKg: p?.bodyweight_kg ?? undefined,
-          heightCm: p?.height_cm ?? undefined,
-          location: p?.location ?? undefined,
-          gym: p?.gym?.name ?? undefined,
-          joinedISO: p?.joined_at ?? undefined,
-          prs: prsRecord,
-          avatarUri: p?.avatar_url ?? null,
-        };
-
-        if (!cancel) {
-          setProfile(mapped);
-          setStreakDays(streak);
-        }
-      } catch (e: any) {
-        console.warn('Profile load failed:', e?.message || e);
-        alert(`Profile load failed:\n${e?.message || e}`);
-      } finally {
-        if (!cancel) setLoading(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (hasFocusedRef.current) {
+        loadProfile();
+      } else {
+        hasFocusedRef.current = true;
       }
-    })();
-    return () => {
-      cancel = true;
-    };
-  }, []);
+      return () => {};
+    }, [loadProfile])
+  );
 
   const total = useMemo(() => LIFTS.reduce((sum, l) => sum + (profile.prs[l] ?? 0), 0), [profile.prs]);
   const totalRatio = useMemo(
