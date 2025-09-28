@@ -529,14 +529,14 @@ export default function LeaderboardScreen() {
         <ThemedText type="defaultSemiBold">Refine leaderboard</ThemedText>
         <Seg items={['Global', 'Filtered']} value={scope} onChange={(v) => setScope(v as any)} />
         {scope === 'Filtered' && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterSectionsRow}
-          >
+          <View style={styles.filterSections}>
             <View style={styles.filterSection}>
               <ThemedText style={styles.filterLabel}>Community</ThemedText>
-              <View style={styles.filterPillRow}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterPillRow}
+              >
                 <Chip
                   label="All members"
                   selected={!friendsOnly}
@@ -547,12 +547,16 @@ export default function LeaderboardScreen() {
                   selected={friendsOnly}
                   onPress={() => setFriendsOnly(true)}
                 />
-              </View>
+              </ScrollView>
             </View>
 
             <View style={styles.filterSection}>
               <ThemedText style={styles.filterLabel}>Gender</ThemedText>
-              <View style={styles.filterPillRow}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterPillRow}
+              >
                 {genderOptions.map((option) => (
                   <Chip
                     key={option}
@@ -561,12 +565,16 @@ export default function LeaderboardScreen() {
                     onPress={() => setGender(option)}
                   />
                 ))}
-              </View>
+              </ScrollView>
             </View>
 
             <View style={styles.filterSection}>
               <ThemedText style={styles.filterLabel}>Age group</ThemedText>
-              <View style={styles.filterPillRow}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterPillRow}
+              >
                 {ageGroups.map((group) => (
                   <Chip
                     key={group}
@@ -575,12 +583,16 @@ export default function LeaderboardScreen() {
                     onPress={() => setAgeGroup(group)}
                   />
                 ))}
-              </View>
+              </ScrollView>
             </View>
 
             <View style={styles.filterSection}>
               <ThemedText style={styles.filterLabel}>Weight class</ThemedText>
-              <View style={styles.filterPillRow}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterPillRow}
+              >
                 {weightClasses.map((group) => (
                   <Chip
                     key={group}
@@ -589,9 +601,9 @@ export default function LeaderboardScreen() {
                     onPress={() => setWeightClass(group)}
                   />
                 ))}
-              </View>
+              </ScrollView>
             </View>
-          </ScrollView>
+          </View>
         )}
       </View>
 
@@ -764,14 +776,11 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: '#fafafa',
   },
-  filterSectionsRow: {
-    flexDirection: 'row',
+  filterSections: {
     paddingTop: 16,
-    paddingBottom: 8,
   },
   filterSection: {
-    marginRight: 16,
-    minWidth: 180,
+    marginBottom: 16,
   },
   filterLabel: {
     fontSize: 12,
@@ -779,11 +788,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     opacity: 0.6,
   },
-  filterPillRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
+  filterPillRow: { flexDirection: 'row', paddingTop: 10, paddingBottom: 6, paddingRight: 8 },
 
   card: {
     marginTop: 14,
