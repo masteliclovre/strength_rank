@@ -3,6 +3,8 @@ import { supabase } from './supabase';
 
 export type Lift = 'Squat' | 'Bench' | 'Deadlift' | 'Overhead Press';
 
+const LIFTS: Lift[] = ['Squat', 'Bench', 'Deadlift', 'Overhead Press'];
+
 // Dev convenience: who is “you” while we don’t have a full auth UI yet
 const DEV_HANDLE = '@you';
 
@@ -46,7 +48,9 @@ export async function fetchProfileAndCurrentPRsByHandle(handle: string) {
 
 /**
  * Profile details + current PRs for a user.
- * Uses the materialized view `current_prs` to fetch each lift's best.
+ * Uses the materialized view `current_prs` when available, but also falls back to
+ * computing the best attempt per lift from `lift_prs` so newly logged PRs show up
+ * immediately even if the materialized view hasn't been refreshed yet.
  */
 export async function fetchProfileAndCurrentPRs(userId: string) {
   // Profile (try to fetch related gym as "gym"; Supabase may return an object or a 1-elem array)
@@ -68,10 +72,22 @@ export async function fetchProfileAndCurrentPRs(userId: string) {
     .select('lift, weight_kg, bodyweight_kg, performed_at, verify')
     .eq('user_id', userId);
 
-  const [pRes, prsRes] = await Promise.all([profileQ, prsQ]);
+  const rawPrsQ = supabase
+    .from('lift_prs')
+    .select('lift, weight_kg, bodyweight_kg, performed_at, verify')
+    .eq('user_id', userId)
+    .order('weight_kg', { ascending: false })
+    .limit(400);
+
+  const [pRes, prsRes, rawRes] = await Promise.all([profileQ, prsQ, rawPrsQ]);
 
   if (pRes.error) throw pRes.error;
-  if (prsRes.error) throw prsRes.error;
+  const prsErrorCode = (prsRes.error as any)?.code as string | undefined;
+  if (prsRes.error && prsErrorCode && !['PGRST301', '42P01'].includes(prsErrorCode)) {
+    throw prsRes.error;
+  }
+  if (prsRes.error && !prsErrorCode) throw prsRes.error;
+  if (rawRes.error) throw rawRes.error;
 
   // Normalize gym relation (can be array or object depending on FK metadata)
   let gymRel: any = (pRes.data as any)?.gym;
@@ -84,7 +100,50 @@ export async function fetchProfileAndCurrentPRs(userId: string) {
       }
     : null;
 
-  return { profile, prs: prsRes.data ?? [] };
+  const normalizeRow = (row: any) => {
+    const weight = Number(row?.weight_kg);
+    if (!row?.lift || !LIFTS.includes(row.lift as Lift) || !weight || Number.isNaN(weight)) {
+      return null;
+    }
+    const lift = row.lift as Lift;
+    return {
+      lift,
+      weight_kg: weight,
+      bodyweight_kg: row?.bodyweight_kg != null ? Number(row.bodyweight_kg) : null,
+      performed_at: row?.performed_at ?? null,
+      verify: row?.verify ?? null,
+    };
+  };
+
+  const bestByLift = new Map<Lift, any>();
+
+  (prsRes.data ?? []).forEach((row: any) => {
+    const normalized = normalizeRow(row);
+    if (normalized) {
+      bestByLift.set(normalized.lift, normalized);
+    }
+  });
+
+  (rawRes.data ?? []).forEach((row: any) => {
+    const normalized = normalizeRow(row);
+    if (!normalized) return;
+    const current = bestByLift.get(normalized.lift);
+    const currentWeight = current ? Number(current.weight_kg) : -Infinity;
+    const nextWeight = Number(normalized.weight_kg);
+    const currentDate = current?.performed_at ? Date.parse(current.performed_at) : -Infinity;
+    const nextDate = normalized.performed_at ? Date.parse(normalized.performed_at) : -Infinity;
+    if (
+      !current ||
+      nextWeight > currentWeight ||
+      (nextWeight === currentWeight && nextDate > currentDate)
+    ) {
+      bestByLift.set(normalized.lift, normalized);
+    }
+  });
+
+  const prs = LIFTS.map((l) => bestByLift.get(l)).filter(Boolean);
+
+  return { profile, prs };
 }
 
 /** Home feed: recent lifts from people you follow (kept for later). */
