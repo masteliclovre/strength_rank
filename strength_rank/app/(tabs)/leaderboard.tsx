@@ -529,7 +529,11 @@ export default function LeaderboardScreen() {
         <ThemedText type="defaultSemiBold">Refine leaderboard</ThemedText>
         <Seg items={['Global', 'Filtered']} value={scope} onChange={(v) => setScope(v as any)} />
         {scope === 'Filtered' && (
-          <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterSectionsRow}
+          >
             <View style={styles.filterSection}>
               <ThemedText style={styles.filterLabel}>Community</ThemedText>
               <View style={styles.filterPillRow}>
@@ -587,7 +591,7 @@ export default function LeaderboardScreen() {
                 ))}
               </View>
             </View>
-          </>
+          </ScrollView>
         )}
       </View>
 
@@ -760,7 +764,15 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: '#fafafa',
   },
-  filterSection: { marginTop: 16 },
+  filterSectionsRow: {
+    flexDirection: 'row',
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  filterSection: {
+    marginRight: 16,
+    minWidth: 180,
+  },
   filterLabel: {
     fontSize: 12,
     letterSpacing: 0.5,
