@@ -278,7 +278,7 @@ export default function UserProfileScreen() {
                 {followBusy ? (
                   <ActivityIndicator />
                 ) : (
-                  <ThemedText style={{ fontWeight: '700' }}>
+                  <ThemedText style={{ fontWeight: '700', color: isFollowing ? 'black' : 'white' }}>
                     {isFollowing ? 'Following' : 'Follow'}
                   </ThemedText>
                 )}
