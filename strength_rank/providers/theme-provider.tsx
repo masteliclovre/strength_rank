@@ -5,7 +5,7 @@ import { Appearance, ColorSchemeName } from 'react-native';
 type ThemePreference = 'light' | 'dark' | 'system';
 
 type ThemeContextValue = {
-  colorScheme: Exclude<ColorSchemeName, null>;
+  colorScheme: 'light' | 'dark';
   themePreference: ThemePreference;
   setThemePreference: (preference: ThemePreference) => Promise<void> | void;
 };
@@ -14,25 +14,39 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const STORAGE_KEY = 'app-theme-preference';
 
-function resolveColorScheme(systemScheme: ColorSchemeName, preference: ThemePreference): Exclude<ColorSchemeName, null> {
+function normalizeSystemScheme(systemScheme: ColorSchemeName | undefined): 'light' | 'dark' {
+  switch (systemScheme) {
+    case 'dark':
+      return 'dark';
+    case 'light':
+      return 'light';
+    default:
+      return 'light';
+  }
+}
+
+function resolveColorScheme(
+  systemScheme: ColorSchemeName | undefined,
+  preference: ThemePreference
+): 'light' | 'dark' {
   if (preference === 'system') {
-    return (systemScheme ?? 'light') as Exclude<ColorSchemeName, null>;
+    return normalizeSystemScheme(systemScheme);
   }
   return preference;
 }
 
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
-  const [systemScheme, setSystemScheme] = useState<ColorSchemeName>(() => Appearance.getColorScheme());
+  const [systemScheme, setSystemScheme] = useState<ColorSchemeName | undefined>(() => Appearance.getColorScheme());
   const [themePreference, setThemePreferenceState] = useState<ThemePreference>('system');
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
-      .then((stored) => {
+      .then((stored: string | null) => {
         if (stored === 'light' || stored === 'dark' || stored === 'system') {
           setThemePreferenceState(stored);
         }
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         console.warn('Failed to load theme preference', error);
       });
   }, []);
@@ -52,7 +66,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
       } else {
         await AsyncStorage.setItem(STORAGE_KEY, preference);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.warn('Failed to persist theme preference', error);
     }
   }, []);
