@@ -24,7 +24,10 @@ type ProfileView = {
   bodyweightKg?: number;
   heightCm?: number;
   location?: string;
-  gym?: string;
+  gym?: {
+    name?: string | null;
+    city?: string | null;
+  } | null;
   joinedISO?: string;
   prs: Record<Lift, number | undefined>;
   avatarUri?: string | null;
@@ -170,7 +173,7 @@ export default function UserProfileScreen() {
           bodyweightKg: profileData.profile?.bodyweight_kg ?? undefined,
           heightCm: profileData.profile?.height_cm ?? undefined,
           location: profileData.profile?.location ?? undefined,
-          gym: profileData.profile?.gym?.name ?? undefined,
+          gym: profileData.profile?.gym ?? null,
           joinedISO: profileData.profile?.joined_at ?? undefined,
           prs: prsRecord,
           avatarUri: profileData.profile?.avatar_url ?? null,
@@ -224,6 +227,27 @@ export default function UserProfileScreen() {
   );
 
   const streakLabel = streakDays > 0 ? `${streakDays} day${streakDays === 1 ? '' : 's'}` : undefined;
+
+  const gymLabel = useMemo(() => {
+    const gym = profile?.gym;
+    if (!gym || !gym.name) return undefined;
+
+    const trimmedName = gym.name.trim();
+    const city = gym.city?.trim();
+
+    if (trimmedName.toLowerCase() === 'g4y') {
+      if (city) {
+        return `Gym4You ${city}`;
+      }
+      return 'Gym4You';
+    }
+
+    if (city && !trimmedName.includes(city)) {
+      return `${trimmedName} (${city})`;
+    }
+
+    return trimmedName;
+  }, [profile?.gym]);
 
   const toggleFollow = async () => {
     if (!userId || isMe) return;
@@ -335,6 +359,7 @@ export default function UserProfileScreen() {
               <FieldRow label="Email" value={profile?.email} icon="email" />
               <FieldRow label="Age" value={profile?.age} icon="age" />
               <FieldRow label="Gender" value={profile?.gender} icon="gender" />
+              <FieldRow label="Gym" value={gymLabel} icon="gym" />
               <FieldRow label="Weight category" value={weightCategory} icon="category" />
               <FieldRow label="Location" value={profile?.location} icon="location" />
               <FieldRow label="Consistency streak" value={streakLabel} icon="streak" />
