@@ -144,6 +144,7 @@ function AddPrModal({
   gymId,
   gymName,
   onSaved,
+  lifts,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -151,6 +152,7 @@ function AddPrModal({
   gymId: string;
   gymName: string;
   onSaved: () => void;
+  lifts: Lift[];
 }) {
   const [lift, setLift] = useState<Lift>(initialLift);
   const [weight, setWeight] = useState<string>('');
@@ -159,7 +161,12 @@ function AddPrModal({
   const [myBw, setMyBw] = useState<number | undefined>(undefined);
   const [videoAsset, setVideoAsset] = useState<PrVideoAsset | null>(null);
 
-  useEffect(() => setLift(initialLift), [initialLift]);
+  useEffect(() => {
+    const nextLift = lifts.includes(initialLift) ? initialLift : lifts[0];
+    if (nextLift && nextLift !== lift) {
+      setLift(nextLift);
+    }
+  }, [initialLift, lifts, lift]);
 
   useEffect(() => {
     if (!visible) {
@@ -259,7 +266,7 @@ function AddPrModal({
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.liftTabs}
           >
-            {LIFTS.map((l) => (
+            {lifts.map((l) => (
               <Chip key={l} label={l} selected={lift === l} onPress={() => setLift(l)} />
             ))}
           </ScrollView>
@@ -349,6 +356,7 @@ export default function LeaderboardScreen() {
   const gymName = (params.gymName as string) ?? 'Gym';
 
   const [lift, setLift] = useState<Lift>('Deadlift');
+  const [availableLifts, setAvailableLifts] = useState<Lift[]>(LIFTS);
   const [scope, setScope] = useState<'Global' | 'Filtered'>('Global');
 
   const [friendsOnly, setFriendsOnly] = useState(false);
@@ -367,6 +375,53 @@ export default function LeaderboardScreen() {
   const [showAddPr, setShowAddPr] = useState(false);
   const openAddPr = () => setShowAddPr(true);
   const closeAddPr = () => setShowAddPr(false);
+
+  // Discover lifts available at this gym
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        if (!gymId) {
+          if (!cancel) {
+            setAvailableLifts(LIFTS);
+            if (!LIFTS.includes(lift)) {
+              setLift(LIFTS[0]);
+            }
+          }
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('lift_prs')
+          .select('lift', { distinct: true })
+          .eq('gym_id', gymId);
+        if (error) throw error;
+
+        const filtered = (data || [])
+          .map((row) => row.lift)
+          .filter((l): l is Lift => typeof l === 'string' && LIFTS.includes(l as Lift));
+        const liftsFromGym = Array.from(new Set(filtered));
+        liftsFromGym.sort((a, b) => LIFTS.indexOf(a) - LIFTS.indexOf(b));
+        const nextLifts = liftsFromGym.length ? liftsFromGym : LIFTS;
+
+        if (cancel) return;
+        setAvailableLifts(nextLifts);
+        if (!nextLifts.includes(lift)) {
+          setLift(nextLifts[0]);
+        }
+      } catch {
+        if (!cancel) {
+          setAvailableLifts(LIFTS);
+          if (!LIFTS.includes(lift)) {
+            setLift(LIFTS[0]);
+          }
+        }
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [gymId, lift]);
 
   // Fetch attempts for this gym & lift; compute current PR per user
   useEffect(() => {
@@ -519,7 +574,7 @@ export default function LeaderboardScreen() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.liftTabs}
       >
-        {LIFTS.map((l) => (
+        {availableLifts.map((l) => (
           <Chip key={l} label={l} selected={lift === l} onPress={() => setLift(l)} />
         ))}
       </ScrollView>
@@ -635,14 +690,12 @@ export default function LeaderboardScreen() {
 
       {/* Exercises + actions */}
       <View style={styles.card}>
-        <ThemedText type="defaultSemiBold">Exercises at {gymName}</ThemedText>
-        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-          {LIFTS.map((l) => (
-            <Chip key={l} label={l} selected={l === lift} onPress={() => setLift(l)} />
-          ))}
-        </View>
+        <ThemedText type="defaultSemiBold">Log a PR at {gymName}</ThemedText>
+        <ThemedText style={{ opacity: 0.7, marginTop: 6 }}>
+          Add your best {lift} result for this gym.
+        </ThemedText>
 
-        <View style={{ marginTop: 10 }}>
+        <View style={{ marginTop: 12 }}>
           <Pressable style={styles.btn} onPress={openAddPr}>
             <ThemedText style={{ fontWeight: '700' }}>Add PR for {lift}</ThemedText>
           </Pressable>
@@ -678,6 +731,7 @@ export default function LeaderboardScreen() {
           gymId={gymId}
           gymName={gymName}
           onSaved={() => setRefreshTick((t) => t + 1)}
+          lifts={availableLifts}
         />
       ) : null}
     </ThemedView>
