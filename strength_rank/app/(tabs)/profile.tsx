@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
+
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { Colors } from '@/constants/theme';
+import { useThemePreference } from '@/providers/theme-provider';
 
 import { supabase } from '@/lib/supabase';
 import { devSignIn, fetchCurrentStreak, fetchProfileAndCurrentPRs, getDevUserId } from '@/lib/data';
@@ -58,9 +61,9 @@ function FieldRow({ label, value, icon }: { label: string; value?: string | numb
   );
 }
 
-function PRRow({ lift, kg }: { lift: Lift; kg?: number }) {
+function PRRow({ lift, kg, dividerColor }: { lift: Lift; kg?: number; dividerColor: string }) {
   return (
-    <View style={styles.prRow}>
+    <View style={[styles.prRow, { borderBottomColor: dividerColor }]}>
       <ThemedText type="defaultSemiBold" style={{ width: 140 }}>
         {lift}
       </ThemedText>
@@ -78,6 +81,15 @@ export default function ProfileScreen() {
     avatarUri: null,
   });
   const [streakDays, setStreakDays] = useState(0);
+  const { colorScheme, themePreference, setThemePreference } = useThemePreference();
+  const themeColors = Colors[colorScheme];
+  const cardBackground = colorScheme === 'dark' ? '#1f1f23' : '#fff';
+  const secondaryBackground = colorScheme === 'dark' ? '#27272a' : '#f7f7f7';
+  const borderColor = colorScheme === 'dark' ? '#2f2f2f' : '#ddd';
+  const subtleBorderColor = colorScheme === 'dark' ? '#3a3a3f' : '#e3e3e3';
+  const avatarBorderColor = colorScheme === 'dark' ? '#3a3a3f' : '#ddd';
+  const avatarPlaceholderColor = colorScheme === 'dark' ? '#2a2a2f' : '#eee';
+  const dividerColor = colorScheme === 'dark' ? '#2d2d32' : '#eee';
 
   const loadIdRef = useRef(0);
   const hasFocusedRef = useRef(false);
@@ -238,8 +250,15 @@ export default function ProfileScreen() {
         {/* Header: avatar + name/handle */}
         <View style={styles.header}>
           <View style={styles.avatarWrap}>
-            <Image source={avatarSrc} style={styles.avatar} contentFit="cover" />
-            <Pressable style={styles.editBadge} onPress={onChangeAvatar}>
+            <Image
+              source={avatarSrc}
+              style={[styles.avatar, { borderColor: avatarBorderColor, backgroundColor: avatarPlaceholderColor }]}
+              contentFit="cover"
+            />
+            <Pressable
+              style={[styles.editBadge, { borderColor, backgroundColor: secondaryBackground }]}
+              onPress={onChangeAvatar}
+            >
               <Icon name="edit" size={12} />
               <ThemedText style={{ marginLeft: 4, fontSize: 12 }}>Edit</ThemedText>
             </Pressable>
@@ -252,12 +271,12 @@ export default function ProfileScreen() {
 
           {/* Quick summary */}
           <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
+            <View style={[styles.summaryItem, { borderColor: subtleBorderColor, backgroundColor: cardBackground }]}>
               <Icon name="total" />
               <ThemedText style={styles.summaryValue}>{total} kg</ThemedText>
               <ThemedText style={styles.summaryLabel}>Total</ThemedText>
             </View>
-            <View style={styles.summaryItem}>
+            <View style={[styles.summaryItem, { borderColor: subtleBorderColor, backgroundColor: cardBackground }]}>
               <Icon name="ratio" />
               <ThemedText style={styles.summaryValue}>{totalRatio.toFixed(2)}</ThemedText>
               <ThemedText style={styles.summaryLabel}>Total / BW</ThemedText>
@@ -272,7 +291,48 @@ export default function ProfileScreen() {
           </View>
         ) : (
           <>
-            <View style={styles.card}>
+            <View style={[styles.card, { borderColor, backgroundColor: cardBackground }]}>
+              <ThemedText type="defaultSemiBold">Appearance</ThemedText>
+              <ThemedText style={{ opacity: 0.7 }}>
+                Choose how Strength Rank looks on this device.
+              </ThemedText>
+              <View style={styles.themeOptionsRow}>
+                {[
+                  { label: 'System', value: 'system' as const },
+                  { label: 'Light', value: 'light' as const },
+                  { label: 'Dark', value: 'dark' as const },
+                ].map(({ label, value }) => {
+                  const isActive = themePreference === value;
+                  const optionBackground = isActive
+                    ? colorScheme === 'dark'
+                      ? '#27272a'
+                      : themeColors.tint
+                    : 'transparent';
+                  const optionBorderColor = isActive ? themeColors.tint : borderColor;
+
+                  return (
+                    <Pressable
+                      key={value}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isActive }}
+                      onPress={() => setThemePreference(value)}
+                      style={[styles.themeOption, { borderColor: optionBorderColor, backgroundColor: optionBackground }]}
+                    >
+                      <ThemedText
+                        style={[
+                          styles.themeOptionText,
+                          isActive && colorScheme === 'light' ? { color: '#fff' } : null,
+                        ]}
+                      >
+                        {label}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={[styles.card, { borderColor, backgroundColor: cardBackground }]}>
               <ThemedText type="defaultSemiBold">Public Info</ThemedText>
               <FieldRow label="Email" value={profile.email} icon="email" />
               <FieldRow label="Age" value={profile.age} icon="age" />
@@ -305,10 +365,10 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <View style={styles.card}>
+            <View style={[styles.card, { borderColor, backgroundColor: cardBackground }]}>
               <ThemedText type="defaultSemiBold">PR Lifts</ThemedText>
               {LIFTS.map((l) => (
-                <PRRow key={l} lift={l} kg={profile.prs[l]} />
+                <PRRow key={l} lift={l} kg={profile.prs[l]} dividerColor={dividerColor} />
               ))}
             </View>
           </>
@@ -333,8 +393,6 @@ const styles = StyleSheet.create({
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ddd',
-    backgroundColor: '#eee',
   },
   editBadge: {
     position: 'absolute',
@@ -346,8 +404,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ddd',
-    backgroundColor: '#f7f7f7',
   },
 
   summaryRow: { marginTop: 12, flexDirection: 'row', gap: 10 },
@@ -355,11 +411,9 @@ const styles = StyleSheet.create({
     minWidth: 120,
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e3e3e3',
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    backgroundColor: '#fff',
   },
   summaryValue: { fontSize: 18, fontWeight: '700', marginTop: 4 },
   summaryLabel: { opacity: 0.7 },
@@ -368,10 +422,8 @@ const styles = StyleSheet.create({
     marginTop: 14,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ddd',
     padding: 12,
     gap: 8,
-    backgroundColor: 'transparent',
   },
   fieldRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
   fieldLabel: { width: 110, opacity: 0.7 },
@@ -383,6 +435,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
+  },
+  themeOptionsRow: {
+    flexDirection: 'row',
+    marginTop: 12,
+    gap: 10,
+  },
+  themeOption: {
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  themeOptionText: {
+    fontWeight: '600',
   },
 });
